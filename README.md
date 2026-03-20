@@ -6,67 +6,68 @@
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
 ## How It Works
-TraceTree dynamically tests payloads by spinning up isolated Docker Sandbox environments (with extended test environment simulators mapping macOS/Windows hooks) and executing the unknown software stack natively. Mid-installation, it drops the active network container parameters immediately to force log malicious secondary egress connections safely without external resolution. A recursive `strace` regex engine simultaneously maps the structural kernel system calls (`clone`, `execve`, `socket`, `openat`) converting them gracefully into a `NetworkX` directed graph architecture. The architecture incorporates an `IsolationForest` Machine Learning evaluation classifier scaling topological outlier behavior uniformly against rigid clean execution templates.
+TraceTree executes suspicious packages inside an isolated Docker sandbox. Right after the initial download starts, it drops the container's network interface. This safely triggers and logs malicious outbound connection attempts without actually letting traffic escape.
+
+A regex engine parses the `strace` output, tracks system calls (like `clone`, `execve`, `socket`, and `openat`), and builds a directed graph using `NetworkX`. Finally, a `RandomForestClassifier` trained on known malware evaluates the graph's topology to detect anomalous behavior.
 
 ## Installation
-You need a Python 3.9+ environment and an active Docker Daemon.
+You need Python 3.9+ and Docker running on your machine.
 
 ```bash
-git clone https://github.com/your-username/TraceTree.git
+git clone https://github.com/tejasprasad2008-afk/TraceTree.git
 cd TraceTree
 
-# Install the globally linked CLI tools
+# Install the CLI tool
 pip install -e .
 ```
 
 ## Usage
-The entire analytics pipeline serves directly via a cleanly formatted interactive Typer CLI panel on your native terminal:
+The pipeline is controlled via a Typer CLI.
 
 ```bash
-# Analyze a PyPI package dynamically
+# Analyze a PyPI package
 cascade-analyze requests
 
-# Evaluate standard bulk dependency maps cleanly
+# Evaluate standard dependency files
 cascade-analyze requirements.txt
 cascade-analyze package.json
 
-# Analyze compiled macOS/Windows application installers
+# Analyze compiled installers
 cascade-analyze malicious_app.dmg
 cascade-analyze payload.exe
 ```
 
 ## Model Training
-TraceTree uses a supervised `RandomForestClassifier` to evaluate structural geometric network topology graph execution boundaries producing 0-100% confidence scores dynamically seamlessly.
-Automatically, internally upon **first run**, `cascade-analyze` fetches dynamically anonymously explicitly caching weights from the public `cascade-analyzer-models` Google Cloud Storage (GCS) bucket securing latest tracked analytics.
+TraceTree uses a supervised `RandomForestClassifier` to map execution boundaries to an anomaly score. On the first run, `cascade-analyze` automatically downloads the latest trained model from a public Google Cloud Storage bucket.
 
-If resolving offline configurations manually natively explicitly executing local benchmarking sequences against custom tracked `data/malicious_packages.txt` and `data/clean_packages.txt` lists locally internally, leverage built-in scalable natively mapped execution commands specifically separately natively:
+If you want to train the model locally using the datasets in `data/`:
 
 ```bash
-# Force download the latest model from GCS natively
+# Force download the latest model from GCS
 cascade-update
 
-# Run the 60-package dataset uniquely extracting node arrays locally iteratively optimizing RandomForest weighting natively dynamically locally
+# Run the 60-package dataset through the sandbox to train a new model
 cascade-train
 ```
 
 ## Who Is This For
-- **Security Researchers:** Hunting undocumented supply chain behavior and novel dynamic execution topologies efficiently.
-- **DevOps / DevSecOps:** Validating the explicit runtime execution safety of unreviewed externally injected dependencies correctly.
-- **Software Engineers:** Profiling the exact geometric structural internal requirements of local applications.
+- **Security Researchers:** Hunting undocumented supply chain behavior.
+- **DevOps / DevSecOps:** Validating the runtime safety of injected dependencies.
+- **Software Engineers:** Profiling the exact syscall requirements of applications.
 
 ## Architecture
-The execution pipeline functions asynchronously decoupled across exactly 5 central independent micro-modules:
-1. **`/sandbox`**: Real Docker orchestration structures provisioning brief ephemeral isolated virtual components and enforcing immediate localized network interruptions natively securely.
-2. **`/monitor`**: The fundamental deep `strace` tracker evaluating raw regex system execution blocks to aggregate discrete logical execution parentage paths globally effectively.
-3. **`/graph`**: Directly translates extracted array patterns structurally utilizing sophisticated `networkx` modeling configurations into visually rendered edge topologies dynamically cleanly.
-4. **`/ml`**: Integrates `scikit-learn` libraries driving complex unsupervised `IsolationForest` anomaly weighting calculations comparing edge connections identically securely.
-5. **`/cli`**: Maps outputs back comprehensively utilizing scalable robust `Typer` components overlayed across extremely pretty native terminal implementations directly locally elegantly via `python-rich`.
+The pipeline is split into 5 core modules:
+1. **`/sandbox`**: Manages the Docker container lifecycle and actively restricts networking during testing.
+2. **`/monitor`**: Parses the `strace` log to track execution paths and network attempts.
+3. **`/graph`**: Uses `networkx` to translate parent/child process relationships into an edge graph.
+4. **`/ml`**: Feeds the extracted graph features into a `RandomForestClassifier` for anomaly detection.
+5. **`/cli`**: The Typer entrypoint that orchestrates the pipeline and renders the terminal UI.
 
 ## Threat Model
-In late 2024, the highly obfuscated fundamental **XZ Utils backdoor** successfully bypassed generalized internal repository auditing cleanly functionally. Complex advanced persistent supply chain malware regularly actively embeds operations secretly separated discretely multiple layers deep throughout benign components quietly safely effectively. By restricting analytics exclusively entirely uniformly to the precise **runtime execution boundary context** fundamentally natively (actually reviewing what specifically internally functions touch securely universally physically natively systematically), this application universally uncovers the reality directly efficiently completely independently reliably securely. 
+In late 2024, the highly obfuscated **XZ Utils** backdoor bypassed standard static scanning. Advanced supply chain malware often hides malicious operations deep within legitimate-looking test code or delayed payload fetches. By analyzing the runtime execution graph, TraceTree bypasses code obfuscation entirely to see exactly what external files, commands, and sockets a package actually tries to open.
 
 ## Contributing
-Contributions and Pull Requests uniformly welcome openly! Establish features correctly structurally properly integrated directly parallel safely functionally cleanly effectively dependently efficiently reliably comprehensively effectively precisely correctly consistently accurately correctly cleanly logically securely efficiently identically appropriately practically fully explicitly fully independently functionally adequately successfully universally exactly natively parallel accurately efficiently adequately appropriately reliably locally fully uniformly consistently practically smoothly gracefully efficiently cohesively. 
+Pull requests are welcome. Please ensure new features remain decoupled across the existing architecture.
 
 ## License
 MIT
