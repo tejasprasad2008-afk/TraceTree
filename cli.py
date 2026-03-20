@@ -16,7 +16,7 @@ try:
 except ImportError:
     docker = None
 
-app = typer.Typer(help="Cascading Behavioral Propagation Analyzer", no_args_is_help=True)
+app = typer.Typer(help="TraceTree Security Analyzer", no_args_is_help=True)
 console = Console()
 
 def check_docker_preflight():
@@ -141,7 +141,7 @@ def analyze(
     target_type = type if type else determine_target_type(target)
 
     console.print(Panel.fit(
-        f"[bold cyan]Cascading Behavioral Propagation Analyzer[/]\n"
+        f"[bold cyan]TraceTree Security Analyzer[/]\n"
         f"Target: [bold yellow]{target}[/]\n"
         f"Analyzer Type: [bold green]{target_type.upper()}[/]",
         border_style="cyan"

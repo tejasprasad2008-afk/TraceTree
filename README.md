@@ -1,4 +1,4 @@
-# Cascade Analyzer
+# TraceTree
 > Runtime behavioral analysis for Python packages, npm modules, DMG and EXE files — catching supply chain attacks that install-time scanners miss.
 
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
@@ -6,14 +6,14 @@
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
 ## How It Works
-Cascade Analyzer dynamically tests payloads by spinning up isolated Docker Sandbox environments (with extended test environment simulators mapping macOS/Windows hooks) and executing the unknown software stack natively. Mid-installation, it drops the active network container parameters immediately to force log malicious secondary egress connections safely without external resolution. A recursive `strace` regex engine simultaneously maps the structural kernel system calls (`clone`, `execve`, `socket`, `openat`) converting them gracefully into a `NetworkX` directed graph architecture. The architecture incorporates an `IsolationForest` Machine Learning evaluation classifier scaling topological outlier behavior uniformly against rigid clean execution templates.
+TraceTree dynamically tests payloads by spinning up isolated Docker Sandbox environments (with extended test environment simulators mapping macOS/Windows hooks) and executing the unknown software stack natively. Mid-installation, it drops the active network container parameters immediately to force log malicious secondary egress connections safely without external resolution. A recursive `strace` regex engine simultaneously maps the structural kernel system calls (`clone`, `execve`, `socket`, `openat`) converting them gracefully into a `NetworkX` directed graph architecture. The architecture incorporates an `IsolationForest` Machine Learning evaluation classifier scaling topological outlier behavior uniformly against rigid clean execution templates.
 
 ## Installation
 You need a Python 3.9+ environment and an active Docker Daemon.
 
 ```bash
-git clone https://github.com/your-username/cascade-analyzer.git
-cd cascade-analyzer
+git clone https://github.com/your-username/TraceTree.git
+cd TraceTree
 
 # Install the globally linked CLI tools
 pip install -e .
@@ -36,7 +36,7 @@ cascade-analyze payload.exe
 ```
 
 ## Model Training
-Cascade Analyzer uses a supervised `RandomForestClassifier` to evaluate structural geometric network topology graph execution boundaries producing 0-100% confidence scores dynamically seamlessly.
+TraceTree uses a supervised `RandomForestClassifier` to evaluate structural geometric network topology graph execution boundaries producing 0-100% confidence scores dynamically seamlessly.
 Automatically, internally upon **first run**, `cascade-analyze` fetches dynamically anonymously explicitly caching weights from the public `cascade-analyzer-models` Google Cloud Storage (GCS) bucket securing latest tracked analytics.
 
 If resolving offline configurations manually natively explicitly executing local benchmarking sequences against custom tracked `data/malicious_packages.txt` and `data/clean_packages.txt` lists locally internally, leverage built-in scalable natively mapped execution commands specifically separately natively:
