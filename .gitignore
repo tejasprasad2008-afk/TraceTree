@@ -1,0 +1,8 @@
+/logs/
+__pycache__/
+*.egg-info/
+.env
+*.pyc
+dist/
+build/
+.gemini/

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cascade-analyzer"
+version = "1.0.0"
+description = "Cascading Behavioral Propagation Analyzer for Python Packages"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "Security Researcher", email = "research@example.com"}
+]
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.4.0",
+    "networkx>=3.0",
+    "scikit-learn>=1.3.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "docker>=7.0.0",
+    "google-cloud-storage>=2.10.0"
+]
+
+[project.scripts]
+cascade-analyze = "cli:app"
+cascade-train = "cli:train_cli"
+cascade-update = "cli:update_cli"
+
+[tool.setuptools]
+packages = ["api", "sandbox", "monitor", "graph", "ml"]
+py-modules = ["cli"]
