@@ -18,7 +18,7 @@ git clone https://github.com/tejasprasad2008-afk/TraceTree.git
 cd TraceTree
 
 # Install the CLI tool
-pip install -e .
+pip install .
 ```
 
 ## Usage
