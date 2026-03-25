@@ -5,6 +5,8 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
+![Header Banner](header%20banner.png)
+
 ## How It Works
 TraceTree executes suspicious packages inside an isolated Docker sandbox. Right after the initial download starts, it drops the container's network interface. This safely triggers and logs malicious outbound connection attempts without actually letting traffic escape.
 
@@ -62,6 +64,8 @@ The pipeline is split into 5 core modules:
 3. **`/graph`**: Uses `networkx` to translate parent/child process relationships into an edge graph.
 4. **`/ml`**: Feeds the extracted graph features into a `RandomForestClassifier` for anomaly detection.
 5. **`/cli`**: The Typer entrypoint that orchestrates the pipeline and renders the terminal UI.
+
+![Banner](banner.png)
 
 ## Threat Model
 In late 2024, the highly obfuscated **XZ Utils** backdoor bypassed standard static scanning. Advanced supply chain malware often hides malicious operations deep within legitimate-looking test code or delayed payload fetches. By analyzing the runtime execution graph, TraceTree bypasses code obfuscation entirely to see exactly what external files, commands, and sockets a package actually tries to open.
