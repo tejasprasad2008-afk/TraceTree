@@ -317,6 +317,57 @@ def analyze(
 
 def train_cli():
     """CLI entrypoint dynamically executing cascade-train"""
+    from rich.prompt import Prompt
+    from rich.text import Text
+    from rich.align import Align
+    import os
+    import sys
+    from pathlib import Path
+
+    # Ensure project root is in path so we can dynamically import ingest scripts
+    project_root = Path(__file__).parent.absolute()
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    console.print("\n")
+    title = Text(" TRACETREE ONLINE TRAINING PIPELINE ", style="bold white on blue")
+    desc = Text("\nConnect to MalwareBazaar, fetch live global malware, and train your behavioral model.", style="italic cyan")
+    console.print(Align.center(Panel(title + desc, border_style="blue", expand=False)))
+    console.print()
+
+    auth_key = os.getenv("MALWAREBAZAAR_AUTH_KEY", "").strip()
+    if not auth_key:
+        console.print(Align.center(Panel(
+            "[bold yellow]Authentication Required[/]\n\n"
+            "To legitimately fetch live malware samples from the internet,\n"
+            "you need a MalwareBazaar Auth Key.\n\n"
+            "[dim]If you do not have one, you can press Enter to skip and train only on local cached data.[/]",
+            border_style="yellow", expand=False
+        )))
+        console.print()
+        
+        auth_key = Prompt.ask("[bold magenta]Enter MalwareBazaar Auth Key[/]", password=True)
+        if auth_key:
+            os.environ["MALWAREBAZAAR_AUTH_KEY"] = auth_key
+            console.print("\n[bold green]✔ Key accepted. Initiating online data ingestion...[/]\n")
+        else:
+            console.print("\n[dim italic]No key provided. Yielding to local cached datasets...[/]\n")
+    else:
+        console.print("[bold green]✔ Found MALWAREBAZAAR_AUTH_KEY in environment. Initiating fetch...[/]\n")
+
+    if auth_key:
+        try:
+            import ingest_malwarebazaar
+            console.print(Panel("[bold cyan]Fetching Samples & Parsing Sandbox Footprints[/]", border_style="cyan", expand=False))
+            ingest_malwarebazaar.main()
+            console.print("\n[bold green]✔ Online sandbox ingestion complete![/]\n")
+        except ImportError as e:
+            console.print(f"[bold red]Could not find ingestion script:[/] {e}")
+        except Exception as e:
+            console.print(f"[bold red]Failed to fetch from MalwareBazaar:[/] {e}")
+
+    console.print(Align.center(Panel("[bold magenta]Training Random Forest ML Model[/]", border_style="magenta", expand=False)))
+    
     from ml.trainer import train_model
     train_model()
 

@@ -7,3 +7,6 @@ dist/
 build/
 .gemini/
 venv/
+*.pkl
+ml/model.pkl
+data/ingested_training_data.csv

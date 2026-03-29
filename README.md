@@ -19,8 +19,8 @@ You need Python 3.9+ and Docker running on your machine.
 git clone https://github.com/tejasprasad2008-afk/TraceTree.git
 cd TraceTree
 
-# Install the CLI tool
-pip install .
+# Install the CLI tool in editable mode
+pip install -e .
 ```
 
 ## Usage
@@ -39,17 +39,29 @@ cascade-analyze malicious_app.dmg
 cascade-analyze payload.exe
 ```
 
-## Model Training
-TraceTree uses a supervised `RandomForestClassifier` to map execution boundaries to an anomaly score. On the first run, `cascade-analyze` automatically downloads the latest trained model from a public Google Cloud Storage bucket.
+## Advanced Training & Dataset Ingestion
+TraceTree features an **Online Training Pipeline** that can fetch live malware samples from [MalwareBazaar](https://malwarebazaar.abuse.ch/).
 
+### Local Training
 If you want to train the model locally using the datasets in `data/`:
 
 ```bash
-# Force download the latest model from GCS
-cascade-update
-
-# Run the 60-package dataset through the sandbox to train a new model
+# Start the interactive training pipeline
 cascade-train
+```
+
+During `cascade-train`, you will be prompted for a MalwareBazaar Auth Key. If provided, the tool will:
+1.  **Ingest:** Fetch the latest malicious Python samples from MalwareBazaar.
+2.  **Sandbox:** Run them through the Docker pipeline to extract fresh behavioral footprints.
+3.  **Train:** Re-calculate the Random Forest weights to include the new data.
+4.  **Sync:** Automatically cache the new model locally.
+
+### Model Synchronization
+To fetch the latest pre-trained model directly from the global cloud storage:
+
+```bash
+# Force download the latest global model
+cascade-update
 ```
 
 ## Who Is This For
