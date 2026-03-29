@@ -1,4 +1,5 @@
 import os
+import shlex
 import time
 import tarfile
 import tempfile
@@ -42,17 +43,18 @@ def run_sandbox(target: str, target_type: str = "pip") -> str:
     log_file_in_container = "/tmp/strace.log"
     volumes = {}
     
+    quoted_target = shlex.quote(target)
     if target_type == "pip":
         sandbox_script = f"""
-pip download {target} --dest /tmp/pkg > /dev/null 2>&1
+pip download {quoted_target} --dest /tmp/pkg > /dev/null 2>&1
 ip link set eth0 down
-strace -f -e trace=all -yy -s 1000 -o {log_file_in_container} pip install --no-index --find-links /tmp/pkg {target} > /dev/null 2>&1
+strace -f -e trace=all -yy -s 1000 -o {log_file_in_container} pip install --no-index --find-links /tmp/pkg {quoted_target} > /dev/null 2>&1
 """
     elif target_type == "npm":
         sandbox_script = f"""
-npm install {target} --global --dry-run > /dev/null 2>&1
+npm install {quoted_target} --global --dry-run > /dev/null 2>&1
 ip link set eth0 down
-strace -f -e trace=all -yy -s 1000 -o {log_file_in_container} npm install {target} --no-audit --no-fund > /dev/null 2>&1
+strace -f -e trace=all -yy -s 1000 -o {log_file_in_container} npm install {quoted_target} --no-audit --no-fund > /dev/null 2>&1
 """
     elif target_type == "dmg":
         # Mount DMG using hfsutils or similar and analyze scripts/binaries
@@ -112,7 +114,8 @@ strace -f -e trace=all -yy -s 1000 -o {log_file_in_container} wine64 /tmp/target
             
             log_dir = Path.cwd() / "logs"
             log_dir.mkdir(exist_ok=True)
-            log_file_name = Path(target).name if target_type in ("exe", "dmg") else target
+            # Use .name to prevent path traversal when creating the log file
+            log_file_name = Path(target).name
             log_file_path = log_dir / f"{log_file_name}_{target_type}_strace.log"
 
             with tarfile.open(temp_tar.name) as tar:
