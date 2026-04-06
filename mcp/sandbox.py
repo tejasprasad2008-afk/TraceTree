@@ -160,8 +160,8 @@ def _build_sandbox_script(
     5. Wait for the server session to complete
     """
     network_block = "" if allow_network else "ip link set eth0 down 2>/dev/null || true"
-    # Ensure port is an integer
-    safe_port = int(port)
+    # Ensure port is an integer if provided
+    safe_port = int(port) if port is not None else 0
 
     # For stdio transport, we run the server and interact via a helper script
     # For HTTP transport, we start the server and then wait
@@ -180,9 +180,9 @@ SERVER_PID=$!
 sleep 3
 
 # Signal readiness — the external MCP client will connect
-echo "MCP_SERVER_PID=$SERVER_PID" > /trace/server_info.txt
-echo "MCP_SERVER_PORT={safe_port}" >> /trace/server_info.txt
-echo "MCP_TRANSPORT={transport}" >> /trace/server_info.txt
+echo MCP_SERVER_PID=$SERVER_PID > /trace/server_info.txt
+echo MCP_SERVER_PORT={safe_port} >> /trace/server_info.txt
+echo MCP_TRANSPORT={shlex.quote(transport)} >> /trace/server_info.txt
 
 # Wait for the server to exit or timeout (60s max)
 for i in $(seq 1 60); do
@@ -213,8 +213,8 @@ strace -f -e trace={MCP_STRACE_SYSCALLS} -yy -s 2000 -o {STRACE_LOG_PATH} {serve
     </trace/mcp_stdin >/trace/mcp_stdout 2>/trace/mcp_stderr &
 SERVER_PID=$!
 
-echo "MCP_SERVER_PID=$SERVER_PID" > /trace/server_info.txt
-echo "MCP_TRANSPORT={transport}" >> /trace/server_info.txt
+echo MCP_SERVER_PID=$SERVER_PID > /trace/server_info.txt
+echo MCP_TRANSPORT={shlex.quote(transport)} >> /trace/server_info.txt
 
 # Wait for the server to exit or timeout
 for i in $(seq 1 60); do
@@ -238,8 +238,8 @@ def _build_npm_server_command(package: str, transport: str, port: int) -> str:
     """
     # Sanitize package name for shell interpolation
     quoted_package = shlex.quote(package)
-    # Ensure port is an integer to prevent injection
-    safe_port = int(port)
+    # Ensure port is an integer if provided
+    safe_port = int(port) if port is not None else 0
 
     if transport == "http":
         # Most npm MCP servers expose HTTP.  We install globally and try to
@@ -257,8 +257,8 @@ def _build_local_server_command(local_path: str, transport: str, port: int) -> s
     Build the shell command to start a locally-mounted MCP server.
     The server code is mounted at /mcp-server.
     """
-    # Ensure port is an integer to prevent injection
-    safe_port = int(port)
+    # Ensure port is an integer if provided
+    safe_port = int(port) if port is not None else 0
 
     # Try common patterns: npm start, python -m, node index.js
     return (
