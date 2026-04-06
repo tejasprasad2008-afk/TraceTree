@@ -24,7 +24,8 @@ setup(
         "fastapi>=0.100.0",
         "uvicorn>=0.23.0",
         "docker>=7.0.0",
-        "google-cloud-storage>=2.10.0"
+        "google-cloud-storage>=2.10.0",
+        "requests>=2.25.1",
     ],
     entry_points={
         "console_scripts": [

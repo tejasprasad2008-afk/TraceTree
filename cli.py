@@ -176,27 +176,6 @@ def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
         
     return tree
 
-@app.command()
-def analyze(
-    target: str = typer.Argument(..., help="Package name (e.g. requests), bulk file (requirements.txt), or installer (app.dmg)"),
-    type: str = typer.Option(None, "--type", "-t", help="Force exactly 'pip', 'npm', 'dmg', 'exe', or 'bulk'"),
-    url: str = typer.Option(None, "--url", "-u", help="Optional URL for private dependencies"),
-):
-    """
-    Run a behavioral cascade analysis on a suspicious target.
-    """
-    check_docker_preflight()
-
-    # Determine type
-    target_type = type if type else determine_target_type(target)
-
-    console.print(Panel.fit(
-        f"[bold cyan]TraceTree Security Analyzer[/]\n"
-        f"Target: [bold yellow]{target}[/]\n"
-        f"Analyzer Type: [bold green]{target_type.upper()}[/]",
-        border_style="cyan"
-    ))
-
 def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[bool, float, dict, dict]:
     """Helper to run the full sandbox -> parse -> graph -> ml pipeline for a single target."""
     from sandbox.sandbox import run_sandbox
@@ -375,6 +354,189 @@ def update_cli():
     """CLI entrypoint evaluating cascade-update natively"""
     from ml.detector import update_model_from_gcs
     update_model_from_gcs()
+
+
+@app.command()
+def mcp(
+    npm: str = typer.Option(None, "--npm", "-n", help="NPM package name (e.g. @modelcontextprotocol/server-github)"),
+    path: str = typer.Option(None, "--path", "-p", help="Local path to an MCP server project"),
+    allow_network: bool = typer.Option(False, "--allow-network", help="Allow outbound network from the sandbox"),
+    transport: str = typer.Option(None, "--transport", "-t", help="Force transport: 'stdio' or 'http'"),
+    port: int = typer.Option(3000, "--port", help="Port for HTTP/SSE transport"),
+    output: str = typer.Option("report", "--output", "-o", help="Output format: 'report' (Rich console) or 'json'"),
+    tool_delay: float = typer.Option(2.0, "--delay", help="Seconds between tool calls during analysis"),
+    timeout: int = typer.Option(60, "--timeout", help="Maximum seconds for the analysis session"),
+):
+    """
+    Run an MCP (Model Context Protocol) server security analysis.
+
+    Spins up the server inside a Docker sandbox, acts as a simulated MCP
+    client, invokes every discovered tool with safe synthetic arguments and
+    adversarial probes, then classifies the behavioral trace for threats.
+    """
+    check_docker_preflight()
+
+    # Resolve target
+    if npm:
+        target = npm
+        target_type = "npm"
+    elif path:
+        target = path
+        target_type = "local"
+        if not Path(path).exists():
+            console.print(f"[bold red]Error:[/] Local path not found: {path}")
+            raise typer.Exit(1)
+    else:
+        console.print("[bold red]Error:[/] Provide either --npm <package> or --path <directory>.")
+        raise typer.Exit(1)
+
+    console.print(Panel.fit(
+        f"[bold cyan]TraceTree MCP Security Analyzer[/]\n"
+        f"Target: [bold yellow]{target}[/]\n"
+        f"Transport: [bold green]{(transport or 'auto').upper()}[/]\n"
+        f"Network: [bold {'green' if allow_network else 'red'}]{'allowed' if allow_network else 'blocked'}[/]",
+        border_style="cyan",
+    ))
+    console.print()
+
+    from mcp.sandbox import run_mcp_sandbox
+    from mcp.client import MCPClient
+    from mcp.features import extract_mcp_features, detect_server_type
+    from mcp.classifier import classify_mcp_threats, compute_risk_score
+    from mcp.report import generate_mcp_report
+    from monitor.parser import parse_strace_log
+    from graph.builder import build_cascade_graph
+    from ml.detector import detect_anomaly
+
+    # Step 1 — Sandbox
+    with Progress(
+        SpinnerColumn("dots2", style="cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task(f"[yellow]Sandboxing MCP server: {target}...", total=None)
+        log_path = run_mcp_sandbox(
+            target=target,
+            target_type=target_type,
+            allow_network=allow_network,
+            port=port,
+            transport=transport or "stdio",
+            timeout=timeout,
+        )
+        if log_path and Path(log_path).exists():
+            progress.update(task, description=f"[bold green]✔[/] [dim]Sandbox complete: {Path(log_path).name}[/]")
+        else:
+            progress.update(task, description=f"[bold red]✖[/] [dim]Sandbox failed.[/]")
+            console.print("\n[bold red]Analysis aborted — sandbox did not produce a trace log.[/]")
+            raise typer.Exit(1)
+
+    # Step 2 — Parse strace (existing pipeline)
+    with Progress(
+        SpinnerColumn("dots2", style="cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("[yellow]Parsing strace log...", total=None)
+        try:
+            parsed_data = parse_strace_log(log_path)
+            progress.update(task, description=f"[bold green]✔[/] [dim]Parsed {len(parsed_data.get('events', []))} events[/]")
+        except Exception as e:
+            progress.update(task, description=f"[bold red]✖[/] [dim]Parser failed: {e}[/]")
+            parsed_data = {"events": [], "flags": [], "processes": {}}
+
+    # Step 3 — Build graph (existing pipeline)
+    graph_data = {}
+    is_malicious = False
+    ml_confidence = 0.0
+    try:
+        graph_data = build_cascade_graph(parsed_data)
+        is_malicious, ml_confidence = detect_anomaly(graph_data, parsed_data)
+    except Exception:
+        pass
+
+    # Step 4 — MCP client simulation (connect, discover tools, invoke, probe)
+    console.print("\n")
+    console.print(Panel("[bold magenta]Simulating MCP Client — Handshake, Tool Discovery & Invocation[/]", border_style="magenta", expand=False))
+
+    mcp_client = MCPClient(
+        transport=transport,
+        port=port,
+        tool_delay=tool_delay,
+    )
+
+    # Attempt connection and tool discovery
+    connected = mcp_client.connect()
+    if connected:
+        tools = mcp_client.discover_tools()
+        console.print(f"[bold green]✔[/] Discovered [bold]{len(tools)}[/] tool(s)")
+
+        # Invoke all tools with safe synthetic arguments
+        console.print("[cyan]Invoking tools with safe synthetic arguments...[/]")
+        mcp_client.invoke_all_tools()
+        console.print(f"[bold green]✔[/] Invoked [bold]{len(mcp_client.call_log)}[/] tool call(s)")
+
+        # Run adversarial probes
+        console.print("[yellow]Running adversarial injection probes...[/]")
+        mcp_client.run_adversarial_probes()
+        console.print(f"[bold green]✔[/] Sent [bold]{len(mcp_client.adversarial_log)}[/] adversarial probe(s)")
+    else:
+        console.print("[bold yellow]⚠ Could not connect to MCP server (expected in stdio sandbox mode). "
+                       "Analysis based on strace trace only.[/]")
+        tools = []
+
+    mcp_client.close()
+
+    # Step 5 — Extract MCP-specific features
+    console.print("\n")
+    console.print(Panel("[bold yellow]Extracting MCP-Specific Features from Syscall Trace[/]", border_style="yellow", expand=False))
+
+    server_type = detect_server_type(target, [t.get("description", "") for t in tools])
+    if server_type:
+        console.print(f"[dim]Detected server type: [bold]{server_type}[/][/dim]")
+
+    features = extract_mcp_features(
+        log_path=log_path,
+        call_log=mcp_client.call_log,
+        adversarial_log=mcp_client.adversarial_log,
+        server_type=server_type,
+    )
+
+    # Step 6 — Classify threats
+    console.print("\n")
+    console.print(Panel("[bold red]Running Rule-Based Threat Classification[/]", border_style="red", expand=False))
+
+    threats = classify_mcp_threats(
+        features=features,
+        prompt_injection_findings=mcp_client.prompt_injection_findings,
+        adversarial_log=mcp_client.adversarial_log,
+        server_type=server_type,
+    )
+    risk_score = compute_risk_score(threats)
+
+    baseline_comparison = features.get("baseline_comparison", {})
+
+    # Step 7 — Generate report
+    console.print("\n")
+    report_output = generate_mcp_report(
+        target=target,
+        server_type=server_type,
+        tools=tools,
+        features=features,
+        threats=threats,
+        prompt_injection_findings=mcp_client.prompt_injection_findings,
+        adversarial_log=mcp_client.adversarial_log,
+        risk_score=risk_score,
+        baseline_comparison=baseline_comparison,
+        is_malicious=is_malicious,
+        ml_confidence=ml_confidence,
+        output_format=output,
+    )
+
+    if output == "json" and report_output:
+        console.print(report_output)
+
 
 if __name__ == "__main__":
     app()

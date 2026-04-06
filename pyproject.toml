@@ -19,7 +19,8 @@ dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
     "docker>=7.0.0",
-    "google-cloud-storage>=2.10.0"
+    "google-cloud-storage>=2.10.0",
+    "requests>=2.25.1",
 ]
 
 [project.scripts]
@@ -28,5 +29,5 @@ cascade-train = "cli:train_cli"
 cascade-update = "cli:update_cli"
 
 [tool.setuptools]
-packages = ["api", "sandbox", "monitor", "graph", "ml"]
+packages = ["api", "sandbox", "monitor", "graph", "ml", "mcp"]
 py-modules = ["cli"]

@@ -70,14 +70,69 @@ cascade-update
 - **Software Engineers:** Profiling the exact syscall requirements of applications.
 
 ## Architecture
-The pipeline is split into 5 core modules:
+The pipeline is split into 6 core modules:
 1. **`/sandbox`**: Manages the Docker container lifecycle and actively restricts networking during testing.
 2. **`/monitor`**: Parses the `strace` log to track execution paths and network attempts.
 3. **`/graph`**: Uses `networkx` to translate parent/child process relationships into an edge graph.
 4. **`/ml`**: Feeds the extracted graph features into a `RandomForestClassifier` for anomaly detection.
-5. **`/cli`**: The Typer entrypoint that orchestrates the pipeline and renders the terminal UI.
+5. **`/mcp`**: MCP server security analysis — sandboxed execution, simulated client, threat classification.
+6. **`/cli`**: The Typer entrypoint that orchestrates the pipeline and renders the terminal UI.
 
 ![Banner](banner.png)
+
+## MCP Server Security Analysis
+
+> **Built in response to the April 2026 MCP security crisis.** The AgentSeal report and [CVE-2026-32211](https://cve.mitre.org/) exposed widespread vulnerabilities in Model Context Protocol servers — including command injection, credential exfiltration, and prompt injection vectors that bypass traditional static analysis. TraceTree's MCP analyzer executes servers in a sandboxed Docker container, acts as a simulated MCP client to invoke every discovered tool, and classifies the resulting syscall trace for malicious behavior.
+
+### Usage
+
+```bash
+# Analyze an npm MCP server package
+cascade-analyze mcp --npm @modelcontextprotocol/server-github
+
+# Analyze a local MCP server project
+cascade-analyze mcp --path ./my-mcp-server
+
+# Allow network (for servers that legitimately need internet, like GitHub MCP)
+cascade-analyze mcp --npm @modelcontextprotocol/server-github --allow-network
+
+# Specify transport explicitly
+cascade-analyze mcp --npm some-package --transport stdio
+cascade-analyze mcp --npm some-package --transport http --port 3000
+
+# Output as JSON for machine-readable consumption
+cascade-analyze mcp --npm some-package --output json
+```
+
+### How MCP Analysis Works
+
+1. **Sandbox** — The MCP server runs inside Docker with `strace -f` tracing the entire process tree. Network is blocked by default (`--network none`), and the server runs as a non-root user.
+2. **Simulated Client** — TraceTree connects to the server (stdio or HTTP/SSE), performs the full JSON-RPC 2.0 `initialize` handshake, and calls `tools/list` to discover every tool the server exposes.
+3. **Safe Invocation** — Each discovered tool is invoked with synthetic arguments (strings → `"test_value"`, numbers → `0`, booleans → `false`). No real credentials or destructive operations are used.
+4. **Adversarial Probes** — Each tool is re-invoked with injection payloads (`; ls /etc`, `../../../etc/passwd`, `<script>alert(1)</script>`) to detect command injection, path traversal, and XSS vulnerabilities.
+5. **Feature Extraction** — The strace log is parsed for MCP-specific features: network connections per tool call, shell invocations, sensitive file reads, and behavioral changes under adversarial input.
+6. **Threat Classification** — A rule-based classifier evaluates the features against known baselines for common server types (filesystem, GitHub, Postgres, fetch, shell).
+
+### Threat Categories
+
+| Threat | Severity | Description |
+|---|---|---|
+| **COMMAND_INJECTION** | Critical | Shell (`/bin/sh`, `/bin/bash`) spawned in response to tool arguments, especially adversarial ones. |
+| **CREDENTIAL_EXFILTRATION** | Critical | Reads `.env`, `~/.aws`, SSH keys, or other secrets, followed by a network connection. |
+| **COVERT_NETWORK_CALL** | High | Outbound connection to an unexpected destination during a tool call — potential C2 or exfiltration. |
+| **PATH_TRAVERSAL** | High | Reads files outside the working directory, especially sensitive system paths. |
+| **EXCESSIVE_PROCESS_SPAWNING** | Medium | Disproportionate number of child processes relative to tool call count. |
+| **PROMPT_INJECTION_VECTOR** | High | Tool descriptions contain zero-width characters (U+200B, U+200C, U+200D, U+FEFF), unusual unicode, or language patterns like "ignore previous instructions". |
+
+### Known Server Baselines
+
+TraceTree compares syscall profiles against hardcoded baselines for common legitimate MCP servers:
+
+- **filesystem** — Only `openat`, `read`, `write`, `getdents` within specified directories. No network, no process spawning.
+- **github** — Connects to `api.github.com` only. File reads for config/auth allowed. No process spawning.
+- **postgres** — Connects to configured DB host only. No filesystem writes outside temp, no process spawning.
+- **fetch/browser** — Connects to user-specified URLs only. No filesystem writes, no process spawning.
+- **shell/execution** — Explicitly allowed to spawn processes. Flags spawning for non-shell tools.
 
 ## Threat Model
 In late 2024, the highly obfuscated **XZ Utils** backdoor bypassed standard static scanning. Advanced supply chain malware often hides malicious operations deep within legitimate-looking test code or delayed payload fetches. By analyzing the runtime execution graph, TraceTree bypasses code obfuscation entirely to see exactly what external files, commands, and sockets a package actually tries to open.
