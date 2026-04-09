@@ -27,7 +27,7 @@ def train_model():
     from sandbox.sandbox import run_sandbox
     from monitor.parser import parse_strace_log
     from graph.builder import build_cascade_graph
-    from ml.detector import map_features
+    from ml.detector import map_features, clear_model_cache
     
     X = []
     y = []
@@ -78,6 +78,9 @@ def train_model():
     with open(model_path, 'wb') as f:
         pickle.dump(model, f)
         
+    # Invalidate in-memory cache to ensure the new model is loaded
+    clear_model_cache()
+
     console.print(f"[bold green]✔ Model efficiently saved natively to {model_path}[/]")
     
     # Sync pipeline state cleanly with remote target GCS tracking endpoint natively
