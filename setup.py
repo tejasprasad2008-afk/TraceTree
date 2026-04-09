@@ -32,6 +32,9 @@ setup(
             "cascade-analyze=cli:app",
             "cascade-train=cli:train_cli",
             "cascade-update=cli:update_cli",
+            "cascade-watch=cli:watch_app",
+            "cascade-check=cli:check_cli",
+            "cascade-install-hook=cli:install_hook_cli",
         ],
     },
     cmdclass={

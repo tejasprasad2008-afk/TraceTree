@@ -37,6 +37,15 @@ cascade-analyze package.json
 # Analyze compiled installers
 cascade-analyze malicious_app.dmg
 cascade-analyze payload.exe
+
+# Watch a repo live (with spider mascot!)
+cascade-watch ./my-project
+
+# Quick-check a suspicious file
+cascade-check setup.py
+
+# Auto-start watcher on every git clone
+cascade-install-hook
 ```
 
 ## Advanced Training & Dataset Ingestion
@@ -70,13 +79,16 @@ cascade-update
 - **Software Engineers:** Profiling the exact syscall requirements of applications.
 
 ## Architecture
-The pipeline is split into 6 core modules:
+The pipeline is split into 9 core modules:
 1. **`/sandbox`**: Manages the Docker container lifecycle and actively restricts networking during testing.
 2. **`/monitor`**: Parses the `strace` log to track execution paths and network attempts.
 3. **`/graph`**: Uses `networkx` to translate parent/child process relationships into an edge graph.
 4. **`/ml`**: Feeds the extracted graph features into a `RandomForestClassifier` for anomaly detection.
 5. **`/mcp`**: MCP server security analysis — sandboxed execution, simulated client, threat classification.
-6. **`/cli`**: The Typer entrypoint that orchestrates the pipeline and renders the terminal UI.
+6. **`/watcher`**: Session guardian — background repo watching with live status updates.
+7. **`/mascot`**: ASCII spider mascot with animated states for terminal UI.
+8. **`/hooks`**: Shell hook for auto-watching repos on `git clone`.
+9. **`/cli`**: The Typer entrypoint that orchestrates the pipeline and renders the terminal UI.
 
 ![Banner](banner.png)
 
@@ -133,6 +145,89 @@ TraceTree compares syscall profiles against hardcoded baselines for common legit
 - **postgres** — Connects to configured DB host only. No filesystem writes outside temp, no process spawning.
 - **fetch/browser** — Connects to user-specified URLs only. No filesystem writes, no process spawning.
 - **shell/execution** — Explicitly allowed to spawn processes. Flags spawning for non-shell tools.
+
+## 🕷️ Session Guardian
+
+TraceTree can now **watch your development session in real-time** — automatically analyzing packages as you clone, install, or modify them.
+
+### Commands
+
+| Command | Description |
+|--------|-------------|
+| `cascade-watch <repo>` | Start live monitoring of a repository. Shows spider mascot + real-time status. |
+| `cascade-check <file>` | Quick one-off scan of a specific file or command. |
+| `cascade-install-hook` | Install shell hook so `git clone` auto-starts `cascade-watch`. |
+
+### Usage
+
+```bash
+# Watch a repo live (with spider mascot!)
+cascade-watch ./my-project
+cascade-watch https://github.com/someone/sus-repo.git
+
+# On-demand deep scan while watching
+cascade-watch ./my-project --check setup.py
+
+# Quick-check a suspicious file (one-off)
+cascade-check setup.py
+cascade-check ./payload.exe
+
+# Auto-start watcher on every git clone
+cascade-install-hook
+```
+
+### Spider Mascot States
+
+The terminal displays a cute furry spider with 4 eyes that reacts to analysis state:
+
+| State | Behavior | When |
+|---|---|---|
+| `idle` | Blinking, watching calmly | Default — no analysis running |
+| `scanning` | Legs moving toward target | On-demand check in progress |
+| `success` | Relaxed pose | Analysis complete — clean verdict |
+| `warning` | Eyes wide, alarmed | Analysis complete — malicious detected |
+| `alert` | Tense, high-risk posture | Suspicious behavior spotted mid-analysis |
+
+### Shell Hook (Auto-Watch on Clone)
+
+After running `cascade-install-hook`, every `git clone` will automatically start `cascade-watch` in the background:
+
+```bash
+$ git clone https://github.com/someone/sus-repo.git
+🕷️  TraceTree is now watching sus-repo
+   (background session guardian started)
+```
+
+💡 Hook logs are written to `/tmp/tracetree_<reponame>.log`.
+
+### Session Locking
+
+Only one watcher per directory is allowed. If you try to watch an already-watched repo, it'll tell you to use `cascade-check` instead.
+
+Lockfiles live in `/tmp/tracetree_sessions/`.
+
+## Key Files
+
+| File | Description |
+|---|---|
+| `cli.py` | Main CLI entrypoint; now includes `watch`, `check`, `install-hook` commands |
+| `mascot/spider.py` | ASCII spider mascot with animated states |
+| `watcher/session.py` | Background session guardian logic |
+| `hooks/shell_hook.sh` | Bash/zsh wrapper for auto-watching clones |
+| `hooks/install_hook.py` | Cross-platform hook installer |
+| `sandbox/sandbox.py` | Docker sandbox manager with network restriction |
+| `monitor/parser.py` | Strace log parser with syscall classification |
+| `graph/builder.py` | NetworkX graph construction from parsed events |
+| `ml/detector.py` | Anomaly detection logic; loads model or falls back to IsolationForest |
+| `mcp/client.py` | Simulated MCP client with stdio/HTTP transport and adversarial probes |
+
+## Important Notes
+
+1. **Docker must be running** for any sandbox analysis to work. The CLI performs a preflight check.
+2. **Session locking**: Only one `cascade-watch` instance per directory. Lockfiles stored in `/tmp/tracetree_sessions/`.
+3. **Shell hook**: After `cascade-install-hook`, all `git clone` commands auto-launch `cascade-watch`. Logs at `/tmp/tracetree_<reponame>.log`.
+4. **ML model file** (`ml/model.pkl`) is ~100MB and gitignored — not committed to the repo.
+5. **`venv/` is machine-specific** — do not commit. Recreate with `pip install -e .` after pulling.
 
 ## Threat Model
 In late 2024, the highly obfuscated **XZ Utils** backdoor bypassed standard static scanning. Advanced supply chain malware often hides malicious operations deep within legitimate-looking test code or delayed payload fetches. By analyzing the runtime execution graph, TraceTree bypasses code obfuscation entirely to see exactly what external files, commands, and sockets a package actually tries to open.

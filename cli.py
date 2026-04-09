@@ -3,7 +3,7 @@ import sys
 import time
 import typer
 import platform
-from typing import Tuple
+from typing import Tuple, Optional
 from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
@@ -53,6 +53,8 @@ def show_welcome():
     tips.add("[bold green]Analyze an npm package:[/] cascade-analyze <package> --type npm")
     tips.add("[bold blue]Analyze a DMG or EXE:[/]   cascade-analyze <file.dmg> --type dmg")
     tips.add("[bold yellow]Bulk scan files:[/]      cascade-analyze requirements.txt --type bulk")
+    tips.add("[bold magenta]Watch a repo live:[/]    cascade-watch ./my-repo")
+    tips.add("[bold red]Quick check a file:[/]      cascade-check setup.py")
 
     console.print(Align.center(Panel(
         tips,
@@ -536,6 +538,400 @@ def mcp(
 
     if output == "json" and report_output:
         console.print(report_output)
+
+
+# ------------------------------------------------------------------ #
+#  Session guardian — watch & check commands
+# ------------------------------------------------------------------ #
+
+_SESSION_DIR = Path("/tmp/tracetree_sessions")
+
+
+def _get_session_lock_path(repo_path: Path) -> Path:
+    """Return the lockfile path for a given repo directory."""
+    import hashlib
+    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    name_hash = hashlib.md5(str(repo_path.resolve()).encode()).hexdigest()[:12]
+    return _SESSION_DIR / f"{name_hash}.pid"
+
+
+def _acquire_session_lock(repo_path: Path) -> Optional[Path]:
+    """
+    Try to acquire a session lock.  Returns the lockfile path on success,
+    or None if another session is already running for this repo.
+    """
+    lock = _get_session_lock_path(repo_path)
+    if lock.exists():
+        try:
+            pid = int(lock.read_text().strip())
+            import os
+            os.kill(pid, 0)  # process still exists
+            return None
+        except (ProcessLookupError, ValueError, PermissionError):
+            # Stale lockfile — clean it up
+            lock.unlink(missing_ok=True)
+    lock.write_text(str(os.getpid()))
+    return lock
+
+
+def _release_session_lock(repo_path: Path) -> None:
+    """Remove the session lockfile."""
+    lock = _get_session_lock_path(repo_path)
+    lock.unlink(missing_ok=True)
+
+
+def _show_spider(console: Console, spider, state: str = "idle"):
+    """Render the spider mascot in a small panel above the main output."""
+    spider.set_state(state)
+    art = spider.render().strip()
+    console.print(Align.center(Panel(
+        Text(art, style="cyan"),
+        border_style="green",
+        padding=(0, 2),
+    )))
+    console.print()
+
+
+@app.command()
+def watch(
+    repo: str = typer.Argument(
+        ...,
+        help="Local repo path or Git URL to watch.",
+    ),
+    check: str = typer.Option(
+        None,
+        "--check", "-c",
+        help="On-demand deep scan of a specific file or command.",
+    ),
+    output: str = typer.Option(
+        "report",
+        "--output", "-o",
+        help="Output format: 'report' (Rich console) or 'json'.",
+    ),
+):
+    """
+    Run the TraceTree session guardian on a repository.
+
+    Starts a background sandbox analysis and displays live status updates
+    with the spider mascot keeping watch.  Press Ctrl+C to stop.
+    """
+    check_docker_preflight()
+
+    # Resolve repo path
+    repo_path = Path(repo)
+    repo_url = None
+    if not repo_path.exists():
+        # Assume it's a URL — for now treat the URL itself as a label
+        repo_url = repo
+        repo_path = Path.cwd()
+        console.print(f"[dim]Treating '{repo}' as remote label; watching current directory.[/]")
+
+    # Acquire session lock
+    lock_path = _acquire_session_lock(repo_path)
+    if lock_path is None:
+        console.print(Panel(
+            f"[bold yellow]A watcher is already active for this directory.[/]\n"
+            f"Path: [dim]{repo_path}[/]\n\n"
+            f"Use [bold]cascade-check {check}[/] to send an on-demand scan, "
+            f"or stop the existing watcher first.",
+            title="[bold]Session Already Running[/]",
+            border_style="yellow",
+            expand=False,
+        ))
+        return
+
+    from watcher.session import SessionWatcher
+    from mascot.spider import SpiderMascot
+
+    spider = SpiderMascot()
+    watcher = SessionWatcher(str(repo_path), repo_url=repo_url)
+
+    # Show spider mascot
+    _show_spider(console, spider, "idle")
+
+    console.print(Panel(
+        f"[bold cyan]TraceTree is watching this session…[/]\n"
+        f"Repo: [bold]{repo_path}[/]",
+        border_style="cyan",
+        padding=(0, 2),
+    ))
+    console.print()
+
+    watcher.start()
+
+    # Handle optional on-demand check
+    if check is not None:
+        spider.set_state("scanning")
+        _show_spider(console, spider, "scanning")
+        console.print(Panel(
+            f"[bold yellow]On-demand scan:[/] {check}",
+            border_style="yellow",
+            expand=False,
+        ))
+        result = watcher.check_path(check)
+        if result.get("error"):
+            console.print(f"[bold red]Error:[/] {result['error']}")
+        else:
+            is_mal = result.get("malicious", False)
+            conf = result.get("confidence", 0.0)
+            threats = result.get("threats", [])
+
+            if is_mal:
+                verdict_text = Text("\n  MALICIOUS  \n", style="bold white on red", justify="center")
+                conf_style = "bold red"
+            else:
+                verdict_text = Text("\n  CLEAN  \n", style="bold white on green", justify="center")
+                conf_style = "bold green"
+
+            console.print(Align.center(Panel.fit(verdict_text, title="Final Verdict", border_style=conf_style.split()[-1])))
+            console.print(Align.center(Text(f"Confidence Score: {conf}%", style=conf_style)))
+
+            if threats:
+                behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in threats])
+                console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red", expand=False))
+
+        console.print()
+
+    # Main live-status loop
+    try:
+        while True:
+            status = watcher.get_status()
+            phase = status.get("phase", "unknown")
+
+            if phase in ("done", "error", "stopped"):
+                break
+
+            phase_icons = {
+                "idle": "⏸",
+                "cloning": "📥",
+                "sandboxing": "🔒",
+                "analyzing": "🔍",
+            }
+            icon = phase_icons.get(phase, "⏳")
+
+            threats_count = len(status.get("threats", []))
+            conf = status.get("confidence", 0.0)
+            mal = status.get("malicious", False)
+
+            status_line = (
+                f"[bold cyan]{icon}[/] Phase: [bold]{phase}[/]  "
+                f"Threats: [bold]{threats_count}[/]  "
+                f"Confidence: [bold]{conf:.1f}%[/]"
+            )
+            if mal:
+                status_line += "  [bold red]⚠ MALICIOUS[/]"
+
+            console.print(status_line)
+            time.sleep(2)
+
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopping watcher…[/]")
+
+    finally:
+        watcher.stop()
+        _release_session_lock(repo_path)
+
+    # Final verdict
+    final = watcher.get_status()
+    phase = final.get("phase", "unknown")
+    is_malicious = final.get("malicious", False)
+    confidence = final.get("confidence", 0.0)
+    threats = final.get("threats", [])
+
+    if is_malicious:
+        verdict_text = Text("\n  MALICIOUS  \n", style="bold white on red", justify="center")
+        conf_style = "bold red"
+        _show_spider(console, spider, "warning")
+    else:
+        verdict_text = Text("\n  CLEAN  \n", style="bold white on green", justify="center")
+        conf_style = "bold green"
+        _show_spider(console, spider, "success")
+
+    console.print(Align.center(Panel.fit(verdict_text, title="Final Verdict", border_style=conf_style.split()[-1])))
+    console.print(Align.center(Text(f"Confidence Score: {confidence}%", style=conf_style)))
+
+    if threats:
+        behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in threats])
+        console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red" if threats else "green", expand=False))
+
+    if phase == "error":
+        console.print(f"[bold red]Error:[/] {final.get('error', 'Unknown error')}")
+
+    console.print("\n" + "─" * console.width + "\n")
+
+
+@app.command(name="check")
+def check(
+    file_or_command: str = typer.Argument(..., help="File path or command to check."),
+    output: str = typer.Option(
+        "report",
+        "--output", "-o",
+        help="Output format: 'report' (Rich console) or 'json'.",
+    ),
+):
+    """
+    Quick on-demand scan of a specific file or command.
+
+    If a SessionWatcher is already running for the current directory
+    (via lockfile), sends the check request to it.  Otherwise starts
+    a quick one-off analysis.
+    """
+    check_docker_preflight()
+
+    from watcher.session import SessionWatcher
+    from mascot.spider import SpiderMascot
+
+    spider = SpiderMascot()
+    _show_spider(console, spider, "scanning")
+
+    repo_path = Path.cwd()
+    lock_path = _get_session_lock_path(repo_path)
+
+    if lock_path.exists():
+        console.print(
+            Panel(
+                f"[bold cyan]Forwarding check to active session watcher…[/]\n"
+                f"Target: [bold]{file_or_command}[/]",
+                border_style="cyan",
+                expand=False,
+            )
+        )
+        # In a full implementation we'd use IPC (e.g. a Unix socket or
+        # a small HTTP endpoint) to send the check to the running watcher.
+        # For now, fall through to a one-off scan.
+        console.print("[dim italic](IPC not yet implemented — running one-off scan instead)[/]")
+
+    console.print()
+    console.print(Panel(
+        f"[bold yellow]Quick check:[/] {file_or_command}",
+        border_style="yellow",
+        expand=False,
+    ))
+
+    # One-off analysis
+    target_path = Path(file_or_command)
+    if not target_path.is_absolute():
+        target_path = repo_path / file_or_command
+
+    ext = target_path.suffix.lower()
+    if ext == ".dmg":
+        target_type = "dmg"
+    elif ext in (".exe", ".msi"):
+        target_type = "exe"
+    elif target_path.name == "requirements.txt":
+        target_type = "pip"
+    elif target_path.name == "package.json":
+        target_type = "npm"
+    else:
+        target_type = "pip"
+
+    log_path = run_sandbox(str(target_path), target_type)
+    if not log_path or not Path(log_path).exists():
+        console.print("[bold red]Error:[/] Sandbox failed — check that Docker is running.")
+        return
+
+    from monitor.parser import parse_strace_log
+    from graph.builder import build_cascade_graph
+    from ml.detector import detect_anomaly
+
+    parsed = parse_strace_log(log_path)
+    graph = build_cascade_graph(parsed)
+    is_malicious, confidence = detect_anomaly(graph, parsed)
+
+    if is_malicious:
+        verdict_text = Text("\n  MALICIOUS  \n", style="bold white on red", justify="center")
+        conf_style = "bold red"
+        spider.set_state("warning")
+    else:
+        verdict_text = Text("\n  CLEAN  \n", style="bold white on green", justify="center")
+        conf_style = "bold green"
+        spider.set_state("success")
+
+    _show_spider(console, spider, spider.state)
+
+    console.print(Align.center(Panel.fit(verdict_text, title="Final Verdict", border_style=conf_style.split()[-1])))
+    console.print(Align.center(Text(f"Confidence Score: {confidence}%", style=conf_style)))
+
+    flags = parsed.get("flags", [])
+    if flags:
+        behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in flags])
+        console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red", expand=False))
+
+    console.print("\n" + "─" * console.width + "\n")
+
+
+@app.command(name="install-hook")
+def install_hook_cmd():
+    """
+    Install the TraceTree shell hook.
+
+    Automatically detects your shell (bash/zsh), copies the hook script
+    to ~/.local/share/tracetree/hooks/, and appends a `source` line
+    to ~/.bashrc or ~/.zshrc.
+    """
+    hooks_dir = Path(__file__).parent / "hooks"
+    install_script = hooks_dir / "install_hook.py"
+
+    if not install_script.exists():
+        console.print(f"[bold red]Error:[/] Install script not found at {install_script}")
+        raise typer.Exit(1)
+
+    # Run the Python installer in-process
+    sys.path.insert(0, str(hooks_dir))
+    try:
+        from install_hook import install_hook as _do_install
+        ok = _do_install()
+        if not ok:
+            raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[bold red]Install failed:[/] {exc}")
+        raise typer.Exit(1)
+
+
+# ------------------------------------------------------------------ #
+#  Standalone entry-point wrappers for console_scripts
+#  These create dedicated Typer apps so `cascade-watch <args>` works
+#  as a top-level command instead of `cascade-analyze watch <args>`.
+# ------------------------------------------------------------------ #
+
+watch_app = typer.Typer(
+    name="cascade-watch",
+    help="Run the TraceTree session guardian on a repository.",
+)
+
+@watch_app.command()
+def _watch_cmd(
+    repo: str = typer.Argument(..., help="Local repo path or Git URL to watch."),
+    check: str = typer.Option(None, "--check", "-c", help="On-demand deep scan of a specific file or command."),
+    output: str = typer.Option("report", "--output", "-o", help="Output format: 'report' or 'json'."),
+):
+    """Run the TraceTree session guardian on a repository."""
+    watch(repo=repo, check=check, output=output)
+
+
+check_cli = typer.Typer(
+    name="cascade-check",
+    help="Quick on-demand scan of a specific file or command.",
+)
+
+@check_cli.command()
+def _check_cmd(
+    file_or_command: str = typer.Argument(..., help="File path or command to check."),
+    output: str = typer.Option("report", "--output", "-o", help="Output format: 'report' or 'json'."),
+):
+    """Quick on-demand scan of a specific file or command."""
+    check(file_or_command=file_or_command, output=output)
+
+
+install_hook_cli = typer.Typer(
+    name="cascade-install-hook",
+    help="Install the TraceTree shell hook.",
+)
+
+@install_hook_cli.command()
+def _install_hook_cmd():
+    """Install the TraceTree shell hook."""
+    install_hook_cmd()
 
 
 if __name__ == "__main__":
