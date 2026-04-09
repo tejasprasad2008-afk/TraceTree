@@ -7,6 +7,8 @@
 
 ![Header Banner](header%20banner.png)
 
+![TraceTree Demo](TraceTree%20ad.gif)
+
 ## How It Works
 TraceTree executes suspicious packages inside an isolated Docker sandbox. Right after the initial download starts, it drops the container's network interface. This safely triggers and logs malicious outbound connection attempts without actually letting traffic escape.
 
