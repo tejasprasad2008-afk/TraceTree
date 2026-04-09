@@ -10,6 +10,14 @@ from rich.console import Console
 
 console = Console()
 
+# Global model cache to avoid repeated disk I/O and unpickling
+_MODEL_CACHE = None
+
+def clear_model_cache():
+    """Invalidates the in-memory model cache."""
+    global _MODEL_CACHE
+    _MODEL_CACHE = None
+
 # Pre-trained baseline characteristics of completely benign normal pip installations
 CLEAN_BASELINES = [
     [5, 4, 0, 15, 1],   [10, 9, 0, 30, 2],
@@ -43,6 +51,10 @@ def train_baseline_model() -> IsolationForest:
 
 def get_ml_model():
     """Lazily loads the Supervised Random Forest if available locally or in GCS."""
+    global _MODEL_CACHE
+    if _MODEL_CACHE is not None:
+        return _MODEL_CACHE
+
     model_path = Path(__file__).parent / "model.pkl"
     
     if not model_path.exists():
@@ -57,14 +69,17 @@ def get_ml_model():
         except Exception as e:
             console.print(f"[bold yellow]⚠ Transparent GCS Download Skipped:[/] {e}")
             console.print("[dim italic]Routing detection cleanly backward onto internal explicit IsolationForest zero-shot mapping...[/]")
-            return train_baseline_model()
+            _MODEL_CACHE = train_baseline_model()
+            return _MODEL_CACHE
             
     try:
         with open(model_path, 'rb') as f:
-            return pickle.load(f)
+            _MODEL_CACHE = pickle.load(f)
+            return _MODEL_CACHE
     except Exception as e:
         console.print(f"[bold red]Failed cleanly evaluating local model.pkl structure:[/] {e}")
-        return train_baseline_model()
+        _MODEL_CACHE = train_baseline_model()
+        return _MODEL_CACHE
 
 def update_model_from_gcs():
     """Forces direct synchronization replacing identically explicit local model cache structures globally."""
@@ -76,6 +91,7 @@ def update_model_from_gcs():
         blob = bucket.blob("model.pkl")
         model_path.parent.mkdir(exist_ok=True)
         blob.download_to_filename(str(model_path))
+        clear_model_cache()
         console.print("[bold green]✔ Supervised RF Model identically synchronized actively from Google Cloud successfully.[/]")
     except Exception as e:
         console.print(f"[bold red]Aggressive GCS Fetch Failed:[/] {e}")
