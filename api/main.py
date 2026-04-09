@@ -14,10 +14,11 @@ app = FastAPI(
 )
 
 # Enable CORS for frontend development
+# allow_credentials must be False when allow_origins is ["*"] for security and Starlette compatibility
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
