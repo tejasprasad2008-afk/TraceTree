@@ -1,6 +1,6 @@
 # TraceTree
 
-![TraceTree Banner](header-banner.png)
+![header banner](header-banner.png)
 
 ![TraceTree Demo](tracetree%20ad.gif)
 
