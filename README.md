@@ -1,5 +1,9 @@
 # TraceTree
 
+![TraceTree Banner](banner.png)
+
+![TraceTree Demo](tracetree%20ad.gif)
+
 Runtime behavioral analysis for Python packages, npm modules, DMG images, and Windows EXE files. Executes targets in a sandboxed Docker container, traces syscalls with strace, and classifies behavior using a combination of ML anomaly detection, rule-based signature matching, and temporal pattern analysis.
 
 ## How It Works
