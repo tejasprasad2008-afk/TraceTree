@@ -1,0 +1,246 @@
+{
+  "signatures": [
+    {
+      "name": "crypto_miner",
+      "description": "Cryptocurrency mining detected \u2014 high process spawning + mining pool connection",
+      "severity": 8,
+      "syscalls": [
+        "clone",
+        "fork",
+        "connect"
+      ],
+      "files": [],
+      "network": {
+        "ports": [
+          3333,
+          4444,
+          14444,
+          45700,
+          8333,
+          9999,
+          14433
+        ],
+        "ip_patterns": []
+      },
+      "sequence": [
+        [
+          "clone",
+          null
+        ],
+        [
+          "clone",
+          null
+        ],
+        [
+          "connect",
+          "pool_port"
+        ]
+      ],
+      "confidence_boost": 25.0
+    },
+    {
+      "name": "reverse_shell",
+      "description": "Reverse shell detected \u2014 connect \u2192 dup2 \u2192 execve /bin/sh",
+      "severity": 10,
+      "syscalls": [
+        "connect",
+        "dup2",
+        "execve"
+      ],
+      "files": [],
+      "network": {
+        "ports": [],
+        "ip_patterns": []
+      },
+      "sequence": [
+        [
+          "connect",
+          "external"
+        ],
+        [
+          "dup2",
+          null
+        ],
+        [
+          "execve",
+          "shell"
+        ]
+      ],
+      "confidence_boost": 35.0
+    },
+    {
+      "name": "credential_theft",
+      "description": "Credential theft detected \u2014 sensitive file read followed by network exfiltration",
+      "severity": 9,
+      "syscalls": [
+        "openat",
+        "connect"
+      ],
+      "files": [
+        "/etc/shadow",
+        "/etc/passwd",
+        ".aws/credentials",
+        ".ssh/id_rsa",
+        ".ssh/id_ed25519",
+        ".npmrc",
+        ".pypirc",
+        ".env",
+        ".git-credentials",
+        ".netrc",
+        "/proc/self/environ",
+        "/root/.bash_history",
+        "/var/run/secrets"
+      ],
+      "network": {
+        "ports": [],
+        "ip_patterns": []
+      },
+      "sequence": [
+        [
+          "openat",
+          "sensitive"
+        ],
+        [
+          "connect",
+          "external"
+        ]
+      ],
+      "confidence_boost": 30.0
+    },
+    {
+      "name": "typosquat_exfil",
+      "description": "Typosquat exfiltration detected \u2014 secret read + upload to paste/file share site",
+      "severity": 9,
+      "syscalls": [
+        "openat",
+        "connect"
+      ],
+      "files": [
+        ".env",
+        ".npmrc",
+        ".aws/credentials",
+        ".ssh/id_rsa"
+      ],
+      "network": {
+        "ports": [
+          443,
+          80,
+          4443
+        ],
+        "known_hosts": [
+          "pastebin.com",
+          "transfer.sh",
+          "file.io",
+          "0x0.st",
+          "termbin.com",
+          "ptpb.pw",
+          "hastebin.com",
+          "paste.ee",
+          "rentry.co",
+          "ghostbin.co",
+          "dpaste.com",
+          "paste.ubuntu.com"
+        ]
+      },
+      "sequence": [
+        [
+          "openat",
+          "secret"
+        ],
+        [
+          "connect",
+          "exfil_host"
+        ]
+      ],
+      "confidence_boost": 30.0
+    },
+    {
+      "name": "process_injection",
+      "description": "Process injection detected \u2014 PROT_EXEC memory mapping + non-standard binary execution",
+      "severity": 9,
+      "syscalls": [
+        "mprotect",
+        "execve"
+      ],
+      "files": [],
+      "network": [],
+      "sequence": [
+        [
+          "mprotect",
+          "PROT_EXEC"
+        ],
+        [
+          "execve",
+          "non_standard"
+        ]
+      ],
+      "confidence_boost": 30.0
+    },
+    {
+      "name": "dns_tunneling",
+      "description": "DNS tunneling suspected \u2014 excessive DNS queries + raw socket exfiltration",
+      "severity": 7,
+      "syscalls": [
+        "getaddrinfo",
+        "sendto",
+        "socket"
+      ],
+      "files": [],
+      "network": {
+        "ports": [
+          53,
+          5353
+        ],
+        "ip_patterns": []
+      },
+      "sequence": null,
+      "confidence_boost": 20.0
+    },
+    {
+      "name": "persistence_cron",
+      "description": "Cron persistence detected \u2014 writing to crontab or cron spool",
+      "severity": 7,
+      "syscalls": [
+        "openat",
+        "write"
+      ],
+      "files": [
+        "/var/spool/cron",
+        "crontab",
+        "/etc/cron.d",
+        "/etc/crontab",
+        ".cron"
+      ],
+      "network": [],
+      "sequence": [
+        [
+          "openat",
+          "cron_path"
+        ],
+        [
+          "write",
+          null
+        ]
+      ],
+      "confidence_boost": 20.0
+    },
+    {
+      "name": "container_escape",
+      "description": "Container escape attempt \u2014 accessing host-level paths or mounting",
+      "severity": 10,
+      "syscalls": [
+        "openat"
+      ],
+      "files": [
+        "/proc/1/",
+        "/sys/fs/cgroup",
+        "/proc/self/ns",
+        "/run/docker.sock",
+        "/var/run/docker.sock"
+      ],
+      "network": [],
+      "sequence": null,
+      "confidence_boost": 35.0
+    }
+  ]
+}

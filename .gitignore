@@ -10,3 +10,5 @@ venv/
 *.pkl
 ml/model.pkl
 data/ingested_training_data.csv
+AGENTS.md
+QWEN.md

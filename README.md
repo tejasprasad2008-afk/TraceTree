@@ -1,241 +1,342 @@
 # TraceTree
-> Runtime behavioral analysis for Python packages, npm modules, DMG and EXE files — catching supply chain attacks that install-time scanners miss.
 
-![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
-
-![Header Banner](header%20banner.png)
-
-![TraceTree Demo](tracetree%20ad.gif)
+Runtime behavioral analysis for Python packages, npm modules, DMG images, and Windows EXE files. Executes targets in a sandboxed Docker container, traces syscalls with strace, and classifies behavior using a combination of ML anomaly detection, rule-based signature matching, and temporal pattern analysis.
 
 ## How It Works
-TraceTree executes suspicious packages inside an isolated Docker sandbox. Right after the initial download starts, it drops the container's network interface. This safely triggers and logs malicious outbound connection attempts without actually letting traffic escape.
 
-A regex engine parses the `strace` output, tracks system calls (like `clone`, `execve`, `socket`, and `openat`), and builds a directed graph using `NetworkX`. Finally, a `RandomForestClassifier` trained on known malware evaluates the graph's topology to detect anomalous behavior.
+```
+target ──► Docker sandbox (network dropped) ──► strace -t -f
+                                               │
+                                               ▼
+                                          strace log
+                                               │
+                              ┌────────────────┼────────────────┐
+                              ▼                ▼                ▼
+                        strace parser      signature       temporal
+                        (parser.py)     matcher (sigs)    analyzer
+                              │                │                │
+                              └───────┬────────┴────────────────┘
+                                      ▼
+                              NetworkX graph
+                              (builder.py)
+                                      │
+                                      ▼
+                          ML anomaly detection
+                          (RandomForest / IsolationForest)
+                                      │
+                                      ▼
+                                 verdict
+```
 
-## Installation
-You need Python 3.9+ and Docker running on your machine.
+1. **Sandbox** — The target runs inside a Docker container. Network is dropped (`ip link set eth0 down`) before installation/execution begins, so any outbound connection attempts are logged but blocked.
+2. **strace** — Every syscall is traced with `strace -t -f -e trace=all`. The `-t` flag adds timestamps for temporal analysis, `-f` follows child processes.
+3. **Parser** (`monitor/parser.py`) — Regex-based parser that handles multi-line strace output and both `[pid]` and bare-pid formats. Extracts process creation, file access, network connections, and memory operations. Each syscall is assigned a severity weight (0–9) based on its security relevance.
+4. **Signature matching** (`monitor/signatures.py`) — Matches the parsed event stream against 8 behavioral signature patterns defined in `data/signatures.json`. Each match produces evidence listing the specific events that triggered it.
+5. **Temporal analysis** (`monitor/timeline.py`) — Detects 5 time-based behavioral patterns from the timestamped event stream (e.g., credential read followed by external connection within 5 seconds).
+6. **Graph** (`graph/builder.py`) — Builds a NetworkX directed graph with process, file, and network nodes. Adds temporal edges between consecutive same-PID events within a 5-second window.
+7. **ML** (`ml/detector.py`) — Extracts a 10-feature vector from the graph and parsed data. Uses a RandomForestClassifier if a trained model is available, falls back to an IsolationForest trained on 10 hardcoded clean-package baselines. Severity scores and temporal pattern counts boost the final confidence.
+
+## What It Detects
+
+### Behavioral Signatures (8 patterns)
+
+Defined in `data/signatures.json`. Each has a severity (1–10), required syscalls, file patterns, network conditions, and an ordered sequence to match.
+
+| Signature | Severity | What it catches |
+|---|---|---|
+| `reverse_shell` | 10 | External connect → dup2 → execve /bin/sh |
+| `container_escape` | 10 | openat of /proc/1/, /sys/fs/cgroup, /var/run/docker.sock |
+| `credential_theft` | 9 | openat of /etc/shadow, .ssh/, .aws/ → external connect |
+| `typosquat_exfil` | 9 | Secret read (.env, .npmrc) → connect to pastebin/file.io/transfer.sh |
+| `process_injection` | 9 | mprotect PROT_EXEC → execve of non-standard binary |
+| `crypto_miner` | 8 | clone → clone → connect to mining pool port (3333, 4444, 14444, 45700) |
+| `dns_tunneling` | 7 | getaddrinfo + sendto + socket on port 53/5353 |
+| `persistence_cron` | 7 | openat of crontab path → write |
+
+### Temporal Patterns (5 patterns)
+
+Detected from timestamped strace output. Requires strace `-t` flag (enabled by default).
+
+| Pattern | Severity | Trigger condition |
+|---|---|---|
+| `connect_then_shell` | 10 | External connect → execve /bin/sh within 3 seconds |
+| `credential_scan_then_exfil` | 9 | Sensitive file read → external connect within 5 seconds |
+| `delayed_payload` | 8 | >10s gap followed by burst of suspicious activity (dropper behavior) |
+| `rapid_file_enumeration` | 7 | 10+ file opens within 1 second (scanning behavior) |
+| `burst_process_spawn` | 7 | 5+ clone/execve within 2 seconds |
+
+### Severity-Weighted Syscall Scoring
+
+Each of 24 syscall types has a base severity weight. Examples:
+- `mprotect` with `PROT_EXEC`: 9.0
+- `dup2` after a `connect`: 9.0
+- `execve` of unexpected binary: 7.0
+- `connect` to cloud metadata (169.254.x.x): 8.0
+- `connect` to PyPI/npm CDN: 0.0 (benign)
+- `openat` of /usr/lib/python/*: 0.0 (benign)
+
+The total severity score feeds into the ML confidence calculation.
+
+### Network Destination Classification
+
+Every `connect` syscall is classified into one of four categories:
+
+| Category | Criteria | Risk score |
+|---|---|---|
+| `safe_registry` | IP matches known PyPI/npm/GitHub CDN ranges | 0.0 |
+| `known_benign` | Standard web port (80/443) to unclassified host | 0.5 |
+| `suspicious` | Cloud metadata (169.254.x.x), private IP from container, or suspicious port (4444, 1337, 31337, etc.) | 8.0–9.0 |
+| `unknown` | Default | 3.0 |
+
+## Supported Targets
+
+| Target type | How it works | Notes |
+|---|---|---|
+| **PyPI packages** | `pip download` (with network), then `pip install --no-index` (without network) under strace | Most reliable. Network is dropped before install. |
+| **npm packages** | `npm install` under strace, network dropped after dry-run | Requires Node.js in the sandbox image. |
+| **DMG files** | Extracted with `7z` inside the container. Found scripts (.sh, .py, .command), .pkg installers, .app bundles, and bare Mach-O binaries are each executed under strace. | Requires p7zip-full in the sandbox image. DMG extraction may fail on encrypted or uncommon formats. Scripts are run in a Linux container, so macOS-specific behavior won't execute. |
+| **EXE files** | Run under `wine64` with `strace -t -f` and a 30-second timeout. Wine initialization noise is filtered from the strace log. | Requires wine64 in the sandbox image. GUI apps that wait for user input will timeout. Wine's translation layer means syscalls are Linux syscalls, not native Windows — some Windows-specific behavior may not be visible. |
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.9+
+- Docker (must be running)
+
+### Install
 
 ```bash
 git clone https://github.com/tejasprasad2008-afk/TraceTree.git
 cd TraceTree
-
-# Install the CLI tool in editable mode
 pip install -e .
 ```
 
-## Usage
-The pipeline is controlled via a Typer CLI.
+### Run an Analysis
 
 ```bash
-# Analyze a PyPI package
 cascade-analyze requests
+```
 
-# Evaluate standard dependency files
+Output:
+
+```
+ ┌──────────────────────────────────────┐
+ │ TraceTree Security Analyzer          │
+ │ Target: requests                     │
+ │ Analyzer Type: PIP                   │
+ └──────────────────────────────────────┘
+ ✔ Sandboxing requests (pip)...
+ ✔ Parsing requests...
+ ✔ Graphing requests...
+ ✔ Detecting requests...
+
+ ┌─ Cascade Graph: requests ────────────┐
+ │ pip install requests                 │
+ │  └─ pip (root)                       │
+ │     └─ net_151.101.1.69:443 (connect)│
+ │     └─ file_/usr/lib/python3.11/...  │
+ └──────────────────────────────────────┘
+
+ ┌─ Flagged Behaviors ──────────────────┐
+ │ No suspicious footprints flagged.    │
+ └──────────────────────────────────────┘
+
+        ┌──────────┐
+        │  CLEAN   │
+        └──────────
+        Confidence Score: 72.3%
+```
+
+For a malicious package (e.g., a known typosquat):
+
+```
+ ┌─ Behavioral Signatures Matched ──────┐
+ │ 🔴 credential_theft (severity 9/10) │
+ │   Step 1: openat /etc/shadow         │
+ │   Step 2: connect 45.33.32.156:4444  │
+ └──────────────────────────────────────┘
+
+ ┌─ Temporal Execution Patterns ────────┐
+ │ 🔴 connect_then_shell (severity 10/10)│
+ │   Window: 1500-4200 ms — External... │
+ └──────────────────────────────────────┘
+
+        ┌───────────┐
+        │ MALICIOUS │
+        └───────────┘
+        Confidence Score: 99.9%
+        Signatures: credential_theft | Temporal: connect_then_shell
+```
+
+## CLI Reference
+
+### `cascade-analyze <target>`
+
+Analyze a single package, binary, or bulk file.
+
+```bash
+# PyPI package
+cascade-analyze requests
+cascade-analyze urllib33      # known typosquat
+
+# npm package
+cascade-analyze package.json
+
+# DMG / EXE
+cascade-analyze suspicious_app.dmg
+cascade-analyze payload.exe
+
+# Bulk analysis
 cascade-analyze requirements.txt
 cascade-analyze package.json
 
-# Analyze compiled installers
-cascade-analyze malicious_app.dmg
-cascade-analyze payload.exe
+# Force target type
+cascade-analyze ./some_file --type pip
+cascade-analyze ./some_file --type npm
+cascade-analyze ./some_file --type dmg
+cascade-analyze ./some_file --type exe
+```
 
-# Watch a repo live (with spider mascot!)
+**Subcommand: `cascade-analyze mcp`** — MCP server security analysis (see MCP section below).
+
+**Subcommand: `cascade-analyze watch <repo>`** — Session guardian (see Session Guardian section).
+
+**Subcommand: `cascade-analyze check <file>`** — Quick on-demand scan.
+
+### `cascade-watch <repo>`
+
+Standalone session guardian. Watches a directory for package manifests and runs background sandbox analysis.
+
+```bash
 cascade-watch ./my-project
+cascade-watch ./my-project --check setup.py    # on-demand scan
+cascade-watch https://github.com/user/repo.git  # URL accepted but not cloned
+```
 
-# Quick-check a suspicious file
+Displays a spider mascot in the terminal and polls status in a loop. Press Ctrl+C to stop. Only one watcher per directory is allowed (lockfile at `/tmp/tracetree_sessions/`).
+
+### `cascade-check <file>`
+
+Quick one-off analysis of a specific file. Starts a fresh sandbox run and returns a verdict.
+
+```bash
 cascade-check setup.py
+cascade-check ./payload.exe
+```
 
-# Auto-start watcher on every git clone
+### `cascade-install-hook`
+
+Installs a shell hook that runs `cascade-watch` automatically after every `git clone`.
+
+```bash
 cascade-install-hook
 ```
 
-## Advanced Training & Dataset Ingestion
-TraceTree features an **Online Training Pipeline** that can fetch live malware samples from [MalwareBazaar](https://malwarebazaar.abuse.ch/).
+This appends a `source` line to `~/.bashrc` or `~/.zshrc`. The hook script lives at `~/.local/share/tracetree/hooks/shell_hook.sh`. After installation, every `git clone` will launch a background watcher and log to `/tmp/tracetree_<reponame>.log`.
 
-### Local Training
-If you want to train the model locally using the datasets in `data/`:
+### `cascade-train`
+
+Interactive training pipeline. Prompts for a MalwareBazaar API key (optional — can be skipped to train on local datasets only), then:
+
+1. Ingests samples from MalwareBazaar (if key provided)
+2. Runs each through the sandbox pipeline
+3. Trains a RandomForestClassifier on the extracted features
+4. Saves to `ml/model.pkl`
+5. Attempts upload to GCS (requires authenticated `google-cloud-storage`)
 
 ```bash
-# Start the interactive training pipeline
+export MALWAREBAZAAR_AUTH_KEY="your-key"
 cascade-train
 ```
 
-During `cascade-train`, you will be prompted for a MalwareBazaar Auth Key. If provided, the tool will:
-1.  **Ingest:** Fetch the latest malicious Python samples from MalwareBazaar.
-2.  **Sandbox:** Run them through the Docker pipeline to extract fresh behavioral footprints.
-3.  **Train:** Re-calculate the Random Forest weights to include the new data.
-4.  **Sync:** Automatically cache the new model locally.
+### `cascade-update`
 
-### Model Synchronization
-To fetch the latest pre-trained model directly from the global cloud storage:
+Downloads the latest pre-trained model from Google Cloud Storage (`cascade-analyzer-models` bucket, anonymous access). Falls back to the IsolationForest baseline if the download fails.
 
 ```bash
-# Force download the latest global model
 cascade-update
 ```
 
-## Who Is This For
-- **Security Researchers:** Hunting undocumented supply chain behavior.
-- **DevOps / DevSecOps:** Validating the runtime safety of injected dependencies.
-- **Software Engineers:** Profiling the exact syscall requirements of applications.
-
-## Architecture
-The pipeline is split into 9 core modules:
-1. **`/sandbox`**: Manages the Docker container lifecycle and actively restricts networking during testing.
-2. **`/monitor`**: Parses the `strace` log to track execution paths and network attempts.
-3. **`/graph`**: Uses `networkx` to translate parent/child process relationships into an edge graph.
-4. **`/ml`**: Feeds the extracted graph features into a `RandomForestClassifier` for anomaly detection.
-5. **`/mcp`**: MCP server security analysis — sandboxed execution, simulated client, threat classification.
-6. **`/watcher`**: Session guardian — background repo watching with live status updates.
-7. **`/mascot`**: ASCII spider mascot with animated states for terminal UI.
-8. **`/hooks`**: Shell hook for auto-watching repos on `git clone`.
-9. **`/cli`**: The Typer entrypoint that orchestrates the pipeline and renders the terminal UI.
-
-![Banner](banner.png)
-
 ## MCP Server Security Analysis
 
-> **Built in response to the April 2026 MCP security crisis.** The AgentSeal report and [CVE-2026-32211](https://cve.mitre.org/) exposed widespread vulnerabilities in Model Context Protocol servers — including command injection, credential exfiltration, and prompt injection vectors that bypass traditional static analysis. TraceTree's MCP analyzer executes servers in a sandboxed Docker container, acts as a simulated MCP client to invoke every discovered tool, and classifies the resulting syscall trace for malicious behavior.
-
-### Usage
+The `cascade-analyze mcp` subcommand analyzes Model Context Protocol servers for malicious behavior. It runs the server in a sandboxed container, acts as a simulated MCP client to discover and invoke every tool, then classifies the resulting syscall trace.
 
 ```bash
-# Analyze an npm MCP server package
+# Analyze an npm MCP server
 cascade-analyze mcp --npm @modelcontextprotocol/server-github
 
 # Analyze a local MCP server project
 cascade-analyze mcp --path ./my-mcp-server
 
-# Allow network (for servers that legitimately need internet, like GitHub MCP)
+# Allow network (for servers that legitimately need internet)
 cascade-analyze mcp --npm @modelcontextprotocol/server-github --allow-network
 
-# Specify transport explicitly
+# Force transport
 cascade-analyze mcp --npm some-package --transport stdio
 cascade-analyze mcp --npm some-package --transport http --port 3000
 
-# Output as JSON for machine-readable consumption
+# JSON output
 cascade-analyze mcp --npm some-package --output json
 ```
 
-### How MCP Analysis Works
+### What MCP analysis does
 
-1. **Sandbox** — The MCP server runs inside Docker with `strace -f` tracing the entire process tree. Network is blocked by default (`--network none`), and the server runs as a non-root user.
-2. **Simulated Client** — TraceTree connects to the server (stdio or HTTP/SSE), performs the full JSON-RPC 2.0 `initialize` handshake, and calls `tools/list` to discover every tool the server exposes.
-3. **Safe Invocation** — Each discovered tool is invoked with synthetic arguments (strings → `"test_value"`, numbers → `0`, booleans → `false`). No real credentials or destructive operations are used.
-4. **Adversarial Probes** — Each tool is re-invoked with injection payloads (`; ls /etc`, `../../../etc/passwd`, `<script>alert(1)</script>`) to detect command injection, path traversal, and XSS vulnerabilities.
-5. **Feature Extraction** — The strace log is parsed for MCP-specific features: network connections per tool call, shell invocations, sensitive file reads, and behavioral changes under adversarial input.
-6. **Threat Classification** — A rule-based classifier evaluates the features against known baselines for common server types (filesystem, GitHub, Postgres, fetch, shell).
-
-### Threat Categories
+1. **Sandbox** — Server runs in Docker with network blocked by default. Traced with `strace -f`.
+2. **Client simulation** — JSON-RPC 2.0 `initialize` handshake, `tools/list` discovery, safe invocation of every tool with synthetic arguments.
+3. **Adversarial probes** — Each tool re-invoked with injection payloads (`; ls /etc`, `../../../etc/passwd`, `<script>alert(1)</script>`).
+4. **Feature extraction** — MCP-specific features: per-tool network connections, shell invocations, sensitive file reads, behavior changes under adversarial input.
+5. **Threat classification** — Rule-based classifier with 6 categories:
 
 | Threat | Severity | Description |
 |---|---|---|
-| **COMMAND_INJECTION** | Critical | Shell (`/bin/sh`, `/bin/bash`) spawned in response to tool arguments, especially adversarial ones. |
-| **CREDENTIAL_EXFILTRATION** | Critical | Reads `.env`, `~/.aws`, SSH keys, or other secrets, followed by a network connection. |
-| **COVERT_NETWORK_CALL** | High | Outbound connection to an unexpected destination during a tool call — potential C2 or exfiltration. |
-| **PATH_TRAVERSAL** | High | Reads files outside the working directory, especially sensitive system paths. |
-| **EXCESSIVE_PROCESS_SPAWNING** | Medium | Disproportionate number of child processes relative to tool call count. |
-| **PROMPT_INJECTION_VECTOR** | High | Tool descriptions contain zero-width characters (U+200B, U+200C, U+200D, U+FEFF), unusual unicode, or language patterns like "ignore previous instructions". |
+| `COMMAND_INJECTION` | Critical | Shell spawned in response to tool arguments |
+| `CREDENTIAL_EXFILTRATION` | Critical | Secret read followed by network connection |
+| `COVERT_NETWORK_CALL` | High | Outbound connection during tool call to unexpected destination |
+| `PATH_TRAVERSAL` | High | File reads outside working directory |
+| `EXCESSIVE_PROCESS_SPAWNING` | Medium | Disproportionate child process count |
+| `PROMPT_INJECTION_VECTOR` | High | Tool descriptions contain zero-width characters or injection language |
 
-### Known Server Baselines
+6. **Baseline comparison** — Compares syscall profiles against hardcoded baselines for 5 server types: `filesystem`, `github`, `postgres`, `fetch`, `shell`.
 
-TraceTree compares syscall profiles against hardcoded baselines for common legitimate MCP servers:
+## Architecture
 
-- **filesystem** — Only `openat`, `read`, `write`, `getdents` within specified directories. No network, no process spawning.
-- **github** — Connects to `api.github.com` only. File reads for config/auth allowed. No process spawning.
-- **postgres** — Connects to configured DB host only. No filesystem writes outside temp, no process spawning.
-- **fetch/browser** — Connects to user-specified URLs only. No filesystem writes, no process spawning.
-- **shell/execution** — Explicitly allowed to spawn processes. Flags spawning for non-shell tools.
+**`sandbox/`** — Docker container lifecycle management. Builds `cascade-sandbox:latest` from a Dockerfile based on `python:3.11-slim` with strace, wine64, p7zip-full, cabextract, Node.js, and npm. Drops the network interface (`ip link set eth0 down`) before target execution. Supports pip, npm, DMG, and EXE targets. Returns a strace log path or empty string on failure.
 
-## 🕷️ Session Guardian
+**`monitor/parser.py`** — Regex-based strace log parser. Handles multi-line syscall entries, both `[pid]` and bare-pid formats, and timestamped (`-t`) output. Tracks 24 syscall types across 5 categories (process, network, file, memory, IPC). Assigns per-event severity weights, classifies network destinations, and flags sensitive file accesses. Returns structured event data with timestamps and relative millisecond offsets.
 
-TraceTree can now **watch your development session in real-time** — automatically analyzing packages as you clone, install, or modify them.
+**`monitor/signatures.py`** — Behavioral signature matcher. Loads 8 patterns from `data/signatures.json`. Supports both unordered matching (required syscalls + file/network patterns must be present) and ordered sequence matching (syscall-condition pairs must appear in order). Returns matched signatures with evidence listing the specific events that triggered each match.
 
-### Commands
+**`monitor/timeline.py`** — Temporal pattern analyzer. Detects 5 time-based behavioral patterns from the ordered, timestamped event stream. Each pattern specifies a severity, a time window, and the triggering conditions. Returns matches sorted by severity descending. Only active when strace was run with `-t` (which is the default).
 
-| Command | Description |
-|--------|-------------|
-| `cascade-watch <repo>` | Start live monitoring of a repository. Shows spider mascot + real-time status. |
-| `cascade-check <file>` | Quick one-off scan of a specific file or command. |
-| `cascade-install-hook` | Install shell hook so `git clone` auto-starts `cascade-watch`. |
+**`graph/builder.py`** — NetworkX directed graph construction. Creates nodes for processes, files, and network destinations. Adds edges for clone relationships, syscall targets, and temporal relationships (consecutive same-PID events within 5 seconds). Nodes and edges are tagged with signature matches and severity weights. Outputs Cytoscape-compatible JSON and internal stats.
 
-### Usage
+**`ml/detector.py`** — Anomaly detection. Extracts a 10-feature vector (node count, edge count, network connections, file reads, execve count, total severity, suspicious networks, sensitive files, max severity, temporal pattern count). Uses RandomForestClassifier if a trained model is available locally or downloadable from GCS; falls back to IsolationForest trained on 10 hardcoded clean-package baselines. Severity scores and temporal pattern counts boost the final confidence independently of the ML prediction.
 
-```bash
-# Watch a repo live (with spider mascot!)
-cascade-watch ./my-project
-cascade-watch https://github.com/someone/sus-repo.git
+**`mcp/`** — MCP server analysis module. Six files: `sandbox.py` (Docker sandbox for MCP servers), `client.py` (JSON-RPC 2.0 client with tool discovery and adversarial probes), `features.py` (MCP-specific feature extraction with server type detection), `classifier.py` (rule-based threat classification), `report.py` (Rich console + JSON report generation).
 
-# On-demand deep scan while watching
-cascade-watch ./my-project --check setup.py
+**`watcher/session.py`** — Session guardian. `SessionWatcher` class runs in a background daemon thread. Discovers packages by scanning for `requirements.txt`, `package.json`, `setup.py`, and `pyproject.toml`. Runs each through the sandbox pipeline. Exposes status via `get_status()` and results via a `Queue`. Session locking via lockfile at `/tmp/tracetree_sessions/`.
 
-# Quick-check a suspicious file (one-off)
-cascade-check setup.py
-cascade-check ./payload.exe
+**`mascot/spider.py`** — `SpiderMascot` class. ASCII spider with 5 states (`idle`, `success`, `warning`, `scanning`, `confused`). Used in the CLI for visual feedback during analysis.
 
-# Auto-start watcher on every git clone
-cascade-install-hook
-```
+**`hooks/`** — Shell hook system. `shell_hook.sh` wraps the `git` command to intercept `git clone` and start `cascade-watch` in the background. `install_hook.py` is a cross-platform installer that detects bash/zsh and appends the source line to the appropriate RC file.
 
-### Spider Mascot States
+**`cli.py`** — Typer CLI entry point. Registers all subcommands. Orchestrates the analysis pipeline with Rich progress bars and formatted output panels.
 
-The terminal displays a cute furry spider with 4 eyes that reacts to analysis state:
+## Limitations
 
-| State | Behavior | When |
-|---|---|---|
-| `idle` | Blinking, watching calmly | Default — no analysis running |
-| `scanning` | Legs moving toward target | On-demand check in progress |
-| `success` | Relaxed pose | Analysis complete — clean verdict |
-| `warning` | Eyes wide, alarmed | Analysis complete — malicious detected |
-| `alert` | Tense, high-risk posture | Suspicious behavior spotted mid-analysis |
-
-### Shell Hook (Auto-Watch on Clone)
-
-After running `cascade-install-hook`, every `git clone` will automatically start `cascade-watch` in the background:
-
-```bash
-$ git clone https://github.com/someone/sus-repo.git
-🕷️  TraceTree is now watching sus-repo
-   (background session guardian started)
-```
-
-💡 Hook logs are written to `/tmp/tracetree_<reponame>.log`.
-
-### Session Locking
-
-Only one watcher per directory is allowed. If you try to watch an already-watched repo, it'll tell you to use `cascade-check` instead.
-
-Lockfiles live in `/tmp/tracetree_sessions/`.
-
-## Key Files
-
-| File | Description |
-|---|---|
-| `cli.py` | Main CLI entrypoint; now includes `watch`, `check`, `install-hook` commands |
-| `mascot/spider.py` | ASCII spider mascot with animated states |
-| `watcher/session.py` | Background session guardian logic |
-| `hooks/shell_hook.sh` | Bash/zsh wrapper for auto-watching clones |
-| `hooks/install_hook.py` | Cross-platform hook installer |
-| `sandbox/sandbox.py` | Docker sandbox manager with network restriction |
-| `monitor/parser.py` | Strace log parser with syscall classification |
-| `graph/builder.py` | NetworkX graph construction from parsed events |
-| `ml/detector.py` | Anomaly detection logic; loads model or falls back to IsolationForest |
-| `mcp/client.py` | Simulated MCP client with stdio/HTTP transport and adversarial probes |
-
-## Important Notes
-
-1. **Docker must be running** for any sandbox analysis to work. The CLI performs a preflight check.
-2. **Session locking**: Only one `cascade-watch` instance per directory. Lockfiles stored in `/tmp/tracetree_sessions/`.
-3. **Shell hook**: After `cascade-install-hook`, all `git clone` commands auto-launch `cascade-watch`. Logs at `/tmp/tracetree_<reponame>.log`.
-4. **ML model file** (`ml/model.pkl`) is ~100MB and gitignored — not committed to the repo.
-5. **`venv/` is machine-specific** — do not commit. Recreate with `pip install -e .` after pulling.
-
-## Threat Model
-In late 2024, the highly obfuscated **XZ Utils** backdoor bypassed standard static scanning. Advanced supply chain malware often hides malicious operations deep within legitimate-looking test code or delayed payload fetches. By analyzing the runtime execution graph, TraceTree bypasses code obfuscation entirely to see exactly what external files, commands, and sockets a package actually tries to open.
+- **ML model reliability** — The trained RandomForest model is only as good as its training data. The current model was trained on a small set of packages. For reliable detection, run `cascade-train` with a large, labeled dataset. The IsolationForest fallback is a heuristic baseline, not a production-quality model.
+- **strace requires Linux** — The sandbox runs on Linux inside Docker. On macOS and Windows, Docker runs a Linux VM, which works, but native macOS or Windows syscalls cannot be traced. DMG scripts and EXE binaries are executed in a Linux environment, which limits their behavioral fidelity.
+- **wine64 EXE analysis is best-effort** — Wine translates Windows syscalls to Linux syscalls. Some Windows-specific behavior (registry access, COM objects, Windows API calls) may not produce visible Linux-level syscalls. GUI applications that wait for user input will timeout after 30 seconds.
+- **DMG analysis is limited** — DMG files are extracted with 7z, which may fail on encrypted or uncommon formats. Extracted scripts are run in a Linux container, so macOS-specific behavior (launchd, Keychain, etc.) will not execute.
+- **No train/test split** — The training pipeline does not split data into training and evaluation sets. Accuracy metrics are not reported.
+- **API stub** — `api/main.py` is not wired to the real pipeline. It returns hardcoded data.
+- **Session guardian does not clone repos** — `cascade-watch` accepts a URL argument but does not perform `git clone`. It watches the local directory or falls back to the current working directory.
 
 ## Contributing
-Pull requests are welcome. Please ensure new features remain decoupled across the existing architecture.
+
+Pull requests are welcome. Please keep new features decoupled from existing modules.
 
 ## License
+
 MIT

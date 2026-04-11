@@ -178,10 +178,16 @@ def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
         
     return tree
 
-def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[bool, float, dict, dict]:
-    """Helper to run the full sandbox -> parse -> graph -> ml pipeline for a single target."""
+def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[bool, float, dict, dict, list, list]:
+    """Helper to run the full sandbox → parse → graph → ML pipeline for a single target.
+
+    Returns:
+        (is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns)
+    """
     from sandbox.sandbox import run_sandbox
     from monitor.parser import parse_strace_log
+    from monitor.signatures import load_signatures, match_signatures
+    from monitor.timeline import detect_temporal_patterns
     from graph.builder import build_cascade_graph
     from ml.detector import detect_anomaly
 
@@ -190,6 +196,8 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
     graph_data = None
     is_malicious = False
     confidence = 0.0
+    signature_matches: list = []
+    temporal_patterns: list = []
 
     task1 = progress.add_task(f"[yellow]Sandboxing {target} ({target_type})...", total=None)
     log_path = run_sandbox(target, target_type)
@@ -197,7 +205,7 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
         progress.update(task1, description=f"[bold green]✔[/] [dim]Sandbox complete: {Path(log_path).name}[/]")
     else:
         progress.update(task1, description=f"[bold red]✖[/] [dim]Sandbox failed for {target}.[/]")
-        return False, 0.0, {}, {}
+        return False, 0.0, {}, {}, [], []
 
     task2 = progress.add_task(f"[yellow]Parsing {target}...", total=None)
     try:
@@ -205,15 +213,40 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
         progress.update(task2, description=f"[bold green]✔[/] [dim]Parsed {len(parsed_data.get('events', []))} events[/]")
     except Exception as e:
         progress.update(task2, description=f"[bold red]✖[/] [dim]Parser failed: {e}[/]")
-        return False, 0.0, {}, {}
+        return False, 0.0, {}, {}, [], []
+
+    # ── Signature matching (best-effort, doesn't block on failure) ──
+    try:
+        sigs = load_signatures()
+        if sigs:
+            signature_matches = match_signatures(parsed_data, sigs)
+            if signature_matches:
+                console.print(f"[dim italic]  🎯 {len(signature_matches)} behavioral signature(s) matched[/]")
+    except Exception as e:
+        console.print(f"[dim]  Signature matching skipped: {e}[/]")
+
+    # ── Temporal pattern detection (best-effort) ──
+    try:
+        if parsed_data.get("has_timestamps"):
+            temporal_patterns = detect_temporal_patterns(parsed_data)
+            if temporal_patterns:
+                console.print(f"[dim italic]  ⏱️  {len(temporal_patterns)} temporal pattern(s) detected[/]")
+    except Exception as e:
+        console.print(f"[dim]  Temporal analysis skipped: {e}[/]")
+
+    # Inject temporal pattern count into graph stats for the ML detector
+    if parsed_data and "stats" not in parsed_data:
+        parsed_data["stats"] = {}
+    if parsed_data:
+        parsed_data.setdefault("stats", {})["temporal_pattern_count"] = len(temporal_patterns)
 
     task3 = progress.add_task(f"[yellow]Graphing {target}...", total=None)
     try:
-        graph_data = build_cascade_graph(parsed_data)
+        graph_data = build_cascade_graph(parsed_data, signature_matches)
         progress.update(task3, description=f"[bold green]✔[/] [dim]Graph mapped[/]")
     except Exception as e:
         progress.update(task3, description=f"[bold red]✖[/] [dim]Graph failed: {e}[/]")
-        return False, 0.0, {}, {}
+        return False, 0.0, {}, parsed_data, signature_matches, temporal_patterns
 
     task4 = progress.add_task(f"[yellow]Detecting {target}...", total=None)
     try:
@@ -221,9 +254,9 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
         progress.update(task4, description="[bold green]✔[/] [dim]Detection complete[/]")
     except Exception as e:
         progress.update(task4, description=f"[bold red]✖[/] [dim]ML failed: {e}[/]")
-        return False, 0.0, {}, {}
+        return False, 0.0, graph_data, parsed_data, signature_matches, temporal_patterns
 
-    return is_malicious, confidence, graph_data, parsed_data
+    return is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns
 
 @app.command()
 def analyze(
@@ -268,8 +301,8 @@ def analyze(
             console=console,
             transient=False,
         ) as progress:
-            is_malicious, confidence, graph_data, parsed_data = perform_analysis(current_target, sub_type, progress, console)
-        
+            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns = perform_analysis(current_target, sub_type, progress, console)
+
         if not graph_data:
             continue
 
@@ -281,10 +314,41 @@ def analyze(
             expand=False
         ))
 
+        # ── Flagged Behaviors (raw parser flags) ──
         flags = parsed_data.get("flags", [])
         behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in flags]) if flags else "[dim green]No suspicious footprints flagged.[/]"
         console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red" if flags else "green", expand=False))
 
+        # ── Behavioral Signatures (matched patterns) ──
+        if sig_matches:
+            sig_lines = []
+            for sig in sig_matches:
+                sev = sig["severity"]
+                sev_icon = "🔴" if sev >= 8 else "🟡" if sev >= 5 else "🟢"
+                evid_summary = "; ".join(sig["evidence"][:2])
+                if len(sig["evidence"]) > 2:
+                    evid_summary += f" (+{len(sig['evidence']) - 2} more)"
+                sig_lines.append(f"{sev_icon} [bold]{sig['name']}[/] (severity {sev}/10) — {sig['description']}")
+                sig_lines.append(f"   [dim]{evid_summary}[/]")
+            sig_text = "\n".join(sig_lines)
+            console.print(Panel(
+                sig_text,
+                title="[bold]⚠ Behavioral Signatures Matched[/]",
+                border_style="yellow",
+                expand=False,
+            ))
+
+        # ── Temporal Execution Patterns ──
+        if temp_patterns:
+            from monitor.timeline import summarize_patterns
+            console.print(Panel(
+                Text.from_ansi(summarize_patterns(temp_patterns)),
+                title="[bold]⏱️  Temporal Execution Patterns[/]",
+                border_style="cyan",
+                expand=False,
+            ))
+
+        # ── Final Verdict ──
         if is_malicious:
             verdict_text = Text("\n  MALICIOUS  \n", style="bold white on red", justify="center")
             conf_style = "bold red"
@@ -294,6 +358,16 @@ def analyze(
 
         console.print(Align.center(Panel.fit(verdict_text, title="Final Verdict", border_style=conf_style.split()[-1])))
         console.print(Align.center(Text(f"Confidence Score: {confidence}%", style=conf_style)))
+
+        # Summary line with both signatures and temporal patterns
+        extras = []
+        if sig_matches:
+            extras.append(f"Signatures: {', '.join(m['name'] for m in sig_matches)}")
+        if temp_patterns:
+            extras.append(f"Temporal: {', '.join(p['pattern_name'] for p in temp_patterns)}")
+        if extras:
+            console.print(Align.center(Text(" | ".join(extras), style="dim yellow")))
+
         console.print("\n" + "─" * console.width + "\n")
 
 def train_cli():

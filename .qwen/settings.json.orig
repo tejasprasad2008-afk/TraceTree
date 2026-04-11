@@ -3,6 +3,5 @@
     "allow": [
       "Bash(mkdir *)"
     ]
-  },
-  "$version": 3
+  }
 }
