@@ -226,6 +226,13 @@ npm install {quoted_target} --global --dry-run > /dev/null 2>&1
 ip link set eth0 down
 strace -f -t -e trace=all -yy -s 1000 -o {log_file_in_container} npm install {quoted_target} --no-audit --no-fund > /dev/null 2>&1
 """
+    elif target_type == "shell":
+        volumes = {str(Path(target).parent): {"bind": "/samples", "mode": "ro"}}
+        quoted_filename = shlex.quote(Path(target).name)
+        sandbox_script = f"""
+ip link set eth0 down 2>/dev/null || true
+strace -f -t -e trace=all -yy -s 1000 -o {log_file_in_container} bash /samples/{quoted_filename} > /dev/null 2>&1 || true
+"""
     elif target_type == "dmg":
         dmg_path = Path(target).absolute()
         if not dmg_path.exists():

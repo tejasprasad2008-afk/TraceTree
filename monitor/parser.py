@@ -123,11 +123,7 @@ KNOWN_SAFE_NETWORKS = frozenset([
 
 # Suspicious destinations — these always raise an alert.
 SUSPICIOUS_DEST_PATTERNS = [
-    re.compile(r"^169\.254\."),      # Link-local / cloud metadata (AWS 169.254.169.254)
-    re.compile(r"^127\."),           # Loopback to local services
-    re.compile(r"^10\."),            # Private range — unusual from a container
-    re.compile(r"^172\.(1[6-9]|2[0-9]|3[01])\."),
-    re.compile(r"^192\.168\."),
+    re.compile(r"^169\.254\."),  # cloud metadata endpoint
     re.compile(r"^0\.0\.0\.0$"),
     re.compile(r"^255\."),
 ]
@@ -145,6 +141,12 @@ SENSITIVE_FILE_PATTERNS = [
     re.compile(r"\.git-credentials"),
     re.compile(r"\.netrc"),
     re.compile(r"/proc/self/environ"),
+    re.compile(r"/proc/net/"),
+    re.compile(r"/proc/\d+/"),
+    re.compile(r"/crontab"),
+    re.compile(r"^/tmp/\.[^/]+"),   # hidden files in /tmp
+    re.compile(r"\.bash_history$"),
+    re.compile(r"/etc/cron"),
     re.compile(r"/root/\.bash_history"),
     re.compile(r"/var/run/secrets"),
 ]
@@ -187,15 +189,12 @@ def _reassemble_lines(lines: List[str]) -> List[str]:
             #   2. Optional [pid] bracket format OR bare pid
             #   3. The syscall name
             # We need to match BOTH formats:
-            #   "00:00:00.000000 [100] execve(..."  (bracketed pid, no bare pid)
-            #   "00:00:00.000000 100 execve(..."    (bare pid)
+            #   "100 00:00:00 execve(..."        (bare pid before timestamp)
+            #   "00:00:00.000000 [100] execve(..."  (timestamp before bracketed pid)
             _START_RE = re.compile(
-                r"^\s*(\d{2}:\d{2}:\d{2}\.\d+\s+)?"  # optional timestamp
-                r"(?:"
-                r"\[\s*\d+\s*\]\s+"                    # [pid] format (bracketed)
-                r"|"
-                r"\d+\s+"                              # bare pid format
-                r")"
+                r"^\s*(\d+\s+)?"                      # optional bare pid first
+                r"(\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\s*"   # optional timestamp, decimal optional
+                r"(?:\[\s*\d+\s*\]\s*)?"       # optional [pid] bracketed
                 r"[a-zA-Z_]\w*\("                       # syscall name + paren
             )
             if _START_RE.match(line):
@@ -232,10 +231,9 @@ def _reassemble_lines(lines: List[str]) -> List[str]:
 # The timestamp part is optional (backward compat with un-timestamped logs).
 _LINE_RE = re.compile(
     r"""^\s*
-        (\d{2}:\d{2}:\d{2}\.\d+)?   # optional timestamp (strace -t)
-        \s*
-        (?:\[\s*(\d+)\s*\]\s*)?       # optional [pid]
-        (\d+\s+)?                      # optional bare pid (non-bracketed)
+        (\d+\s+)?                      # optional bare pid first (non-bracketed)
+        (\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\s*   # optional timestamp, decimal optional
+        (?:\[\s*(\d+)\s*\]\s*)?       # optional [pid bracketed]
         ([a-zA-Z_]\w*)                 # syscall name
         \((.*)                         # opening paren + rest of args
     """,
@@ -301,11 +299,17 @@ def _classify_destination(ip: str, port: Optional[str] = None) -> Dict[str, Any]
             risk = max(risk, 8.5)
         notes.append(f"Suspicious port {port_num}")
 
-    # Port 443/80 to unknown IPs are normal HTTPS/HTTP.
-    if port_num in (443, 80, 8080, 4443) and category == "unknown":
-        category = "known_benign"
-        risk = 0.5
-        notes.append("Standard web port to unclassified host")
+    # Port 443/80 to unknown public IPs should be tracked as external unknown.
+    if category == "unknown":
+        # Treat private and loopback ranges separately from public IPs.
+        if port_num in (80, 443) and not ip.startswith(("10.", "127.", "172.", "192.168.")):
+            category = "external_unknown"
+            risk = 6.0
+            notes.append("Public web service on standard port to unknown host")
+        elif port_num not in (80, 443) and port_num != 0:
+            category = "suspicious"
+            risk = 8.0
+            notes.append("Unknown host on non-standard port")
 
     return {
         "ip": ip,
@@ -410,9 +414,9 @@ def parse_strace_log(log_path: str) -> Dict[str, Any]:
         if not m:
             continue
 
-        # Regex groups with timestamp: 1=timestamp, 2=[pid], 3=bare_pid, 4=syscall, 5=args
-        ts_str = m.group(1)
-        pid = m.group(2) or (m.group(3).strip() if m.group(3) else "0")
+        # Regex groups with timestamp: 1=bare_pid, 2=timestamp, 3=[pid], 4=syscall, 5=args
+        ts_str = m.group(2)
+        pid = m.group(3) or (m.group(1).strip() if m.group(1) else "0")
         syscall = m.group(4)
         args_raw = m.group(5)
 

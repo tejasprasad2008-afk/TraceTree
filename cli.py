@@ -20,6 +20,7 @@ except ImportError:
 from rich.columns import Columns
 from rich.layout import Layout
 from rich.style import Style
+from sandbox.sandbox import run_sandbox
 
 app = typer.Typer(help="TraceTree Security Analyzer")
 console = Console()
@@ -896,6 +897,8 @@ def check(
         target_type = "pip"
     elif target_path.name == "package.json":
         target_type = "npm"
+    elif ext in (".sh", ".bash") or (target_path.is_file() and not ext):
+        target_type = "shell"
     else:
         target_type = "pip"
 
