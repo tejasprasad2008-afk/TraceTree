@@ -1,0 +1,6 @@
+#!/Users/tejasprasad/TraceTree/traceenv/bin/python3
+import sys
+from cli import install_hook_cli
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(install_hook_cli())
