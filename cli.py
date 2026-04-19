@@ -111,7 +111,7 @@ def check_docker_preflight():
 
 def determine_target_type(target: str) -> str:
     path = Path(target)
-    if path.is_file() or "." in path.name:
+    if path.is_file():
         ext = path.suffix.lower()
         if ext == ".dmg":
             return "dmg"
@@ -122,6 +122,20 @@ def determine_target_type(target: str) -> str:
         elif ext == ".txt" and path.name == "requirements.txt":
             return "bulk-pip"
     return "pip"
+
+
+def _extract_resource_data(log_path: str) -> dict:
+    """Extract resource monitoring data from strace log comments."""
+    import json as _json
+    try:
+        content = Path(log_path).read_text(errors="replace")
+        for line in content.splitlines():
+            if line.startswith("# TRACE_TREE_RESOURCE_DATA:"):
+                json_str = line.split(":", 1)[1].strip()
+                return _json.loads(json_str)
+    except Exception:
+        pass
+    return {}
 
 def recursive_build_tree(tree_node: Tree, graph_json: dict, current_node_id: str):
     """Recursively walks the generated graph JSON to build the Rich Tree UI."""
@@ -179,16 +193,18 @@ def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
         
     return tree
 
-def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[bool, float, dict, dict, list, list]:
+def perform_analysis(target: str, target_type: str, progress, console, workspace_root: str = None) -> Tuple[bool, float, dict, dict, list, list, list, dict]:
     """Helper to run the full sandbox → parse → graph → ML pipeline for a single target.
 
     Returns:
-        (is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns)
+        (is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data)
     """
     from sandbox.sandbox import run_sandbox
     from monitor.parser import parse_strace_log
     from monitor.signatures import load_signatures, match_signatures
     from monitor.timeline import detect_temporal_patterns
+    from monitor.yara import scan_with_yara
+    from monitor.ngrams import extract_ngrams, detect_suspicious_ngrams
     from graph.builder import build_cascade_graph
     from ml.detector import detect_anomaly
 
@@ -199,22 +215,29 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
     confidence = 0.0
     signature_matches: list = []
     temporal_patterns: list = []
+    yara_matches: list = []
+    ngram_data: dict = {}
 
     task1 = progress.add_task(f"[yellow]Sandboxing {target} ({target_type})...", total=None)
-    log_path = run_sandbox(target, target_type)
+    log_path = run_sandbox(target, target_type, workspace_root=workspace_root)
     if log_path and Path(log_path).exists():
         progress.update(task1, description=f"[bold green]✔[/] [dim]Sandbox complete: {Path(log_path).name}[/]")
     else:
         progress.update(task1, description=f"[bold red]✖[/] [dim]Sandbox failed for {target}.[/]")
-        return False, 0.0, {}, {}, [], []
+        return False, 0.0, {}, {}, [], [], {}, {}
 
     task2 = progress.add_task(f"[yellow]Parsing {target}...", total=None)
     try:
         parsed_data = parse_strace_log(log_path)
         progress.update(task2, description=f"[bold green]✔[/] [dim]Parsed {len(parsed_data.get('events', []))} events[/]")
+
+        # Extract resource data from log comments
+        resource_data = _extract_resource_data(log_path)
+        if resource_data:
+            parsed_data.setdefault("stats", {}).update(resource_data)
     except Exception as e:
         progress.update(task2, description=f"[bold red]✖[/] [dim]Parser failed: {e}[/]")
-        return False, 0.0, {}, {}, [], []
+        return False, 0.0, {}, {}, [], [], {}, {}
 
     # ── Signature matching (best-effort, doesn't block on failure) ──
     try:
@@ -235,6 +258,26 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
     except Exception as e:
         console.print(f"[dim]  Temporal analysis skipped: {e}[/]")
 
+    # ── YARA rule scanning (best-effort) ──
+    try:
+        yara_matches = scan_with_yara(log_path=log_path)
+        if yara_matches:
+            console.print(f"[dim italic]  🔍 {len(yara_matches)} YARA rule(s) matched[/]")
+    except Exception as e:
+        console.print(f"[dim]  YARA scanning skipped: {e}[/]")
+
+    # ── Syscall N-gram Fingerprinting (best-effort) ──
+    try:
+        ngram_data = extract_ngrams(log_path, n=3)
+        suspicious_ng = detect_suspicious_ngrams(ngram_data)
+        if suspicious_ng:
+            console.print(f"[dim italic]  🧬 {len(suspicious_ng)} suspicious n-gram pattern(s) detected[/]")
+            # Inject into parsed_data stats for downstream use
+            parsed_data.setdefault("stats", {})["suspicious_ngram_count"] = len(suspicious_ng)
+            parsed_data.setdefault("stats", {})["ngram_fingerprint"] = ngram_data.get("fingerprint", "")
+    except Exception as e:
+        console.print(f"[dim]  N-gram fingerprinting skipped: {e}[/]")
+
     # Inject temporal pattern count into graph stats for the ML detector
     if parsed_data and "stats" not in parsed_data:
         parsed_data["stats"] = {}
@@ -247,7 +290,7 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
         progress.update(task3, description=f"[bold green]✔[/] [dim]Graph mapped[/]")
     except Exception as e:
         progress.update(task3, description=f"[bold red]✖[/] [dim]Graph failed: {e}[/]")
-        return False, 0.0, {}, parsed_data, signature_matches, temporal_patterns
+        return False, 0.0, {}, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data
 
     task4 = progress.add_task(f"[yellow]Detecting {target}...", total=None)
     try:
@@ -255,15 +298,16 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
         progress.update(task4, description="[bold green]✔[/] [dim]Detection complete[/]")
     except Exception as e:
         progress.update(task4, description=f"[bold red]✖[/] [dim]ML failed: {e}[/]")
-        return False, 0.0, graph_data, parsed_data, signature_matches, temporal_patterns
+        return False, 0.0, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data
 
-    return is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns
+    return is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data
 
 @app.command()
 def analyze(
     target: str = typer.Argument(..., help="Package name, bulk file, or installer"),
     type: str = typer.Option(None, "--type", "-t", help="Force 'pip', 'npm', 'dmg', 'exe', or 'bulk'"),
     url: str = typer.Option(None, "--url", "-u", help="Optional URL for private dependencies"),
+    sarif: str = typer.Option(None, "--sarif", "-s", help="Output SARIF report to this file path"),
 ):
     """Run a behavioral cascade analysis on a suspicious target."""
     check_docker_preflight()
@@ -302,7 +346,7 @@ def analyze(
             console=console,
             transient=False,
         ) as progress:
-            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns = perform_analysis(current_target, sub_type, progress, console)
+            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()))
 
         if not graph_data:
             continue
@@ -349,6 +393,46 @@ def analyze(
                 expand=False,
             ))
 
+        # ── YARA Rule Matches ──
+        if yara_matches:
+            yara_lines = []
+            for ym in yara_matches:
+                sev_icon = "🔴" if ym["severity"] == "critical" else "🟡" if ym["severity"] == "high" else "🟢"
+                yara_lines.append(f"{sev_icon} [bold]{ym['rule_name']}[/] ({ym['severity']}) — {ym['description']}")
+                yara_lines.append(f"   [dim]File: {ym['file_path']} | Matches: {', '.join(ym['matched_strings'][:3])}[/]")
+            yara_text = "\n".join(yara_lines)
+            console.print(Panel(
+                yara_text,
+                title="[bold]🔍 YARA Rule Matches[/]",
+                border_style="yellow",
+                expand=False,
+            ))
+
+        # ── Syscall N-gram Fingerprints ──
+        if ngram_data and ngram_data.get("top_ngrams"):
+            from monitor.ngrams import detect_suspicious_ngrams
+            suspicious_ng = detect_suspicious_ngrams(ngram_data)
+            ng_lines = []
+            ng_lines.append(f"[dim]Fingerprint: [/][bold cyan]{ngram_data.get('fingerprint', 'N/A')}[/]  "
+                            f"[dim]| Total syscalls: [/][bold]{ngram_data.get('total_syscalls', 0)}[/]  "
+                            f"[dim]| Unique trigrams: [/][bold]{ngram_data.get('unique_ngrams', 0)}[/]")
+            if suspicious_ng:
+                ng_lines.append("")
+                ng_lines.append("[bold yellow]⚠ Suspicious n-gram patterns:[/]")
+                for sg in suspicious_ng:
+                    ng_lines.append(f"  🔴 {sg['ngram']} — {sg['description']} (count: {sg['count']})")
+            ng_lines.append("")
+            ng_lines.append("[dim]Top trigrams:[/]")
+            for ng, cnt in ngram_data["top_ngrams"][:5]:
+                ng_lines.append(f"  {ng} → {cnt}")
+            ng_text = "\n".join(ng_lines)
+            console.print(Panel(
+                ng_text,
+                title="[bold]🧬 Syscall N-gram Fingerprint[/]",
+                border_style="magenta",
+                expand=False,
+            ))
+
         # ── Final Verdict ──
         if is_malicious:
             verdict_text = Text("\n  MALICIOUS  \n", style="bold white on red", justify="center")
@@ -366,10 +450,53 @@ def analyze(
             extras.append(f"Signatures: {', '.join(m['name'] for m in sig_matches)}")
         if temp_patterns:
             extras.append(f"Temporal: {', '.join(p['pattern_name'] for p in temp_patterns)}")
+        if yara_matches:
+            extras.append(f"YARA: {', '.join(m['rule_name'] for m in yara_matches)}")
+        if ngram_data and ngram_data.get("fingerprint"):
+            extras.append(f"N-gram FP: {ngram_data['fingerprint']}")
         if extras:
             console.print(Align.center(Text(" | ".join(extras), style="dim yellow")))
 
+        # ── SARIF Report Export ──
+        if sarif:
+            from monitor.sarif import generate_sarif_report
+            sarif_path = sarif if len(targets_to_analyze) == 1 else f"{sarif}_{current_target}.json"
+            try:
+                sarif_json = generate_sarif_report(
+                    target=current_target,
+                    parsed_data=parsed_data,
+                    graph_data=graph_data,
+                    signature_matches=sig_matches,
+                    temporal_patterns=temp_patterns,
+                    yara_matches=yara_matches,
+                    ngram_data=ngram_data,
+                    is_malicious=is_malicious,
+                    confidence=confidence,
+                    output_path=sarif_path,
+                )
+                console.print(f"[bold green]✔[/] [dim]SARIF report written to {sarif_path}[/]")
+            except Exception as e:
+                console.print(f"[bold red]✖[/] [dim]SARIF export failed: {e}[/]")
+
         console.print("\n" + "─" * console.width + "\n")
+
+        # ── Container Resource Usage ──
+        res_stats = parsed_data.get("stats", {})
+        if res_stats.get("peak_memory_kb") or res_stats.get("disk_used_kb"):
+            mem_mb = round(res_stats.get("peak_memory_kb", 0) / 1024, 1)
+            disk_mb = round(res_stats.get("disk_used_kb", 0) / 1024, 1)
+            file_count = res_stats.get("file_count", 0)
+            res_text = (
+                f"[dim]Peak memory:[/] [bold]{mem_mb} MB[/]  "
+                f"[dim]| Disk used:[/] [bold]{disk_mb} MB[/]  "
+                f"[dim]| Files installed:[/] [bold]{file_count}[/]"
+            )
+            console.print(Panel(
+                res_text,
+                title="[bold]📊 Container Resource Usage[/]",
+                border_style="green",
+                expand=False,
+            ))
 
 def train_cli():
     """CLI entrypoint dynamically executing cascade-train"""
@@ -622,6 +749,21 @@ def mcp(
 _SESSION_DIR = Path("/tmp/tracetree_sessions")
 
 
+def _run_analysis_for_diff(target: str, target_type: str, progress, console, workspace_root: str = None) -> Dict[str, Any]:
+    """Run analysis and return a dict suitable for diff comparison."""
+    is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(target, target_type, progress, console, workspace_root=workspace_root)
+    return {
+        "parsed_data": parsed_data,
+        "graph_data": graph_data,
+        "signature_matches": sig_matches,
+        "temporal_patterns": temp_patterns,
+        "yara_matches": yara_matches,
+        "ngram_data": ngram_data,
+        "is_malicious": is_malicious,
+        "confidence": confidence,
+    }
+
+
 def _get_session_lock_path(repo_path: Path) -> Path:
     """Return the lockfile path for a given repo directory."""
     import hashlib
@@ -632,21 +774,44 @@ def _get_session_lock_path(repo_path: Path) -> Path:
 
 def _acquire_session_lock(repo_path: Path) -> Optional[Path]:
     """
-    Try to acquire a session lock.  Returns the lockfile path on success,
-    or None if another session is already running for this repo.
+    Try to acquire a session lock using atomic file creation.
+    Returns the lockfile path on success, or None if another session
+    is already running for this repo.
     """
     lock = _get_session_lock_path(repo_path)
+
+    # First check: if lock exists and process is alive, bail out
     if lock.exists():
         try:
             pid = int(lock.read_text().strip())
-            import os
             os.kill(pid, 0)  # process still exists
             return None
         except (ProcessLookupError, ValueError, PermissionError):
-            # Stale lockfile — clean it up
+            # Stale lockfile — clean it up and proceed to atomic acquire
             lock.unlink(missing_ok=True)
-    lock.write_text(str(os.getpid()))
-    return lock
+
+    # Atomic acquire: O_CREAT | O_EXCL ensures only one process succeeds
+    try:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        with os.fdopen(fd, 'w') as f:
+            f.write(str(os.getpid()))
+        return lock
+    except FileExistsError:
+        # Another process won the race — check if it's still alive
+        try:
+            pid = int(lock.read_text().strip())
+            os.kill(pid, 0)
+            return None
+        except (ProcessLookupError, ValueError, PermissionError, FileNotFoundError):
+            # Stale lock from the race winner — clean up and retry once
+            lock.unlink(missing_ok=True)
+            try:
+                fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                with os.fdopen(fd, 'w') as f:
+                    f.write(str(os.getpid()))
+                return lock
+            except FileExistsError:
+                return None
 
 
 def _release_session_lock(repo_path: Path) -> None:
@@ -902,7 +1067,7 @@ def check(
     else:
         target_type = "pip"
 
-    log_path = run_sandbox(str(target_path), target_type)
+    log_path = run_sandbox(str(target_path), target_type, workspace_root=str(repo_path))
     if not log_path or not Path(log_path).exists():
         console.print("[bold red]Error:[/] Sandbox failed — check that Docker is running.")
         return
@@ -963,6 +1128,99 @@ def install_hook_cmd():
     except Exception as exc:
         console.print(f"[bold red]Install failed:[/] {exc}")
         raise typer.Exit(1)
+
+
+@app.command(name="diff")
+def diff_cmd(
+    target_a: str = typer.Argument(..., help="Baseline package name or file."),
+    target_b: str = typer.Argument(..., help="Candidate package name or file to compare against baseline."),
+    type_a: str = typer.Option(None, "--type-a", help="Force type for baseline (pip/npm/dmg/exe)."),
+    type_b: str = typer.Option(None, "--type-b", help="Force type for candidate (pip/npm/dmg/exe)."),
+):
+    """
+    Compare the behavioral analysis of two packages.
+
+    Runs both targets through the sandbox pipeline and produces a
+    behavioral diff highlighting added/removed syscalls, network
+    destinations, file accesses, and signature matches.
+    """
+    check_docker_preflight()
+
+    type_a = type_a or determine_target_type(target_a)
+    type_b = type_b or determine_target_type(target_b)
+
+    console.print(Panel.fit(
+        f"[bold cyan]TraceTree Behavioral Diff[/]\n"
+        f"Baseline: [bold yellow]{target_a}[/] ({type_a})\n"
+        f"Candidate: [bold yellow]{target_b}[/] ({type_b})",
+        border_style="cyan",
+    ))
+    console.print()
+
+    from monitor.diff import diff_analysis
+
+    # Analyze baseline
+    console.print(Panel("[bold magenta]Analyzing baseline...[/]", border_style="magenta", expand=False))
+    with Progress(
+        SpinnerColumn("dots2", style="cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=False,
+    ) as progress:
+        result_a = _run_analysis_for_diff(target_a, type_a, progress, console, workspace_root=str(Path.cwd()))
+
+    if not result_a.get("graph_data"):
+        console.print("[bold red]Error:[/] Baseline analysis failed.")
+        raise typer.Exit(1)
+
+    # Analyze candidate
+    console.print("\n")
+    console.print(Panel("[bold magenta]Analyzing candidate...[/]", border_style="magenta", expand=False))
+    with Progress(
+        SpinnerColumn("dots2", style="cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=False,
+    ) as progress:
+        result_b = _run_analysis_for_diff(target_b, type_b, progress, console, workspace_root=str(Path.cwd()))
+
+    if not result_b.get("graph_data"):
+        console.print("[bold red]Error:[/] Candidate analysis failed.")
+        raise typer.Exit(1)
+
+    # Compute diff
+    console.print("\n")
+    console.print(Panel("[bold yellow]Computing behavioral diff...[/]", border_style="yellow", expand=False))
+
+    diff = diff_analysis(result_a, result_b, label_a=target_a, label_b=target_b)
+
+    # Display diff
+    console.print("\n")
+    console.print(Panel(diff["summary"], border_style="red" if diff["verdict"] == "suspicious" else "yellow" if diff["verdict"] == "divergent" else "green", expand=False))
+
+    console.print(f"[dim]N-gram similarity: [bold]{diff['ngram_similarity']:.4f}[/][/dim]")
+    console.print()
+
+    if diff["details"]:
+        detail_lines = []
+        for d in diff["details"]:
+            detail_lines.append(d)
+        console.print(Panel(
+            "\n".join(detail_lines),
+            title="[bold]Diff Observations[/]",
+            border_style="cyan",
+            expand=False,
+        ))
+
+    # Show severity comparison
+    sev = diff["severity_diff"]
+    sev_text = (
+        f"[dim]Total severity:[/] {sev['total_a']:.1f} → {sev['total_b']:.1f}  "
+        f"[dim]| Max severity:[/] {sev['max_a']:.1f} → {sev['max_b']:.1f}"
+    )
+    console.print(Panel(sev_text, title="[bold]Severity Comparison[/]", border_style="magenta", expand=False))
+
+    console.print("\n" + "─" * console.width + "\n")
 
 
 # ------------------------------------------------------------------ #

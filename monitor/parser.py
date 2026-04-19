@@ -126,6 +126,10 @@ SUSPICIOUS_DEST_PATTERNS = [
     re.compile(r"^169\.254\."),  # cloud metadata endpoint
     re.compile(r"^0\.0\.0\.0$"),
     re.compile(r"^255\."),
+    re.compile(r"^127\."),         # loopback from container is unusual
+    re.compile(r"^10\."),          # private IP from container
+    re.compile(r"^172\.(1[6-9]|2[0-9]|3[01])\."),  # private IP from container
+    re.compile(r"^192\.168\."),    # private IP from container
 ]
 
 # Sensitive file patterns for openat/read/write.
@@ -167,6 +171,13 @@ SUSPICIOUS_PORTS = frozenset([
 
 _RETURN_RE = re.compile(r"\)\s*=\s*(.+)$")
 
+_START_RE = re.compile(
+    r"^\s*(\d+\s+)?"                      # optional bare pid first
+    r"(\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\s*"   # optional timestamp, decimal optional
+    r"(?:\[\s*\d+\s*\]\s*)?"       # optional [pid] bracketed
+    r"[a-zA-Z_]\w*\("                       # syscall name + paren
+)
+
 
 def _reassemble_lines(lines: List[str]) -> List[str]:
     """
@@ -184,19 +195,6 @@ def _reassemble_lines(lines: List[str]) -> List[str]:
 
         # If we're not accumulating, check if this line starts a syscall.
         if not current_parts:
-            # A syscall line can start with:
-            #   1. An optional timestamp: HH:MM:SS.ffffff
-            #   2. Optional [pid] bracket format OR bare pid
-            #   3. The syscall name
-            # We need to match BOTH formats:
-            #   "100 00:00:00 execve(..."        (bare pid before timestamp)
-            #   "00:00:00.000000 [100] execve(..."  (timestamp before bracketed pid)
-            _START_RE = re.compile(
-                r"^\s*(\d+\s+)?"                      # optional bare pid first
-                r"(\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\s*"   # optional timestamp, decimal optional
-                r"(?:\[\s*\d+\s*\]\s*)?"       # optional [pid] bracketed
-                r"[a-zA-Z_]\w*\("                       # syscall name + paren
-            )
             if _START_RE.match(line):
                 current_parts.append(line)
                 # If this single line already has the return value, emit it immediately

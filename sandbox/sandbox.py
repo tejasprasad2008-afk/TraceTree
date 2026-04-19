@@ -21,10 +21,17 @@ _DMG_ANALYZE_SCRIPT = r"""
 set -euo pipefail
 
 LOG_FILE="/tmp/strace.log"
+RESOURCE_FILE="/tmp/resources.json"
 DST="/tmp/dmg_extracted"
 INPUT="$1"
 
 mkdir -p "$DST"
+
+# Capture initial resource state
+echo '{"initial": {' > "$RESOURCE_FILE"
+echo "  \"mem_total_kb\": $(grep MemTotal /proc/meminfo | awk '{print $2}')," >> "$RESOURCE_FILE"
+echo "  \"cpu_count\": $(nproc)" >> "$RESOURCE_FILE"
+echo '}, "samples": []}' >> "$RESOURCE_FILE"
 
 # Try 7z first (handles most DMG formats)
 if 7z x "$INPUT" -o"$DST" -y > /dev/null 2>&1; then
@@ -88,15 +95,17 @@ for exe in "${EXECUTABLES[@]}"; do
             ;;
         *.sh|*.py|*.command)
             if [[ "$exe" == *.py ]]; then
-                python3 "$exe" &>/dev/null || true
+                strace -t -f -e trace=all -yy -s 1000 -o /tmp/strace_script.log python3 "$exe" 2>/dev/null || true
             else
-                bash "$exe" &>/dev/null || true
+                strace -t -f -e trace=all -yy -s 1000 -o /tmp/strace_script.log bash "$exe" 2>/dev/null || true
             fi
+            cat /tmp/strace_script.log >> "$LOG_FILE" 2>/dev/null || true
             ;;
         *)
-            # Native binary — run directly
+            # Native binary — run under strace
             chmod +x "$exe" 2>/dev/null || true
-            "$exe" &>/dev/null || true
+            strace -t -f -e trace=all -yy -s 1000 -o /tmp/strace_bin.log "$exe" 2>/dev/null || true
+            cat /tmp/strace_bin.log >> "$LOG_FILE" 2>/dev/null || true
             ;;
     esac
 done
@@ -172,7 +181,7 @@ echo "[exe] Analysis complete — log: $LOG_FILE" >&2
 # --------------------------------------------------------------------------- #
 
 
-def run_sandbox(target: str, target_type: str = "pip") -> str:
+def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = None) -> str:
     """
     Executes the package/installer logic inside an isolated Docker container.
     Captures syscalls using strace.
@@ -212,56 +221,114 @@ def run_sandbox(target: str, target_type: str = "pip") -> str:
 
     log_file_in_container = "/tmp/strace.log"
     volumes = {}
+    env_vars = {"TARGET": target}  # Pass target via environment variable, not string interpolation
 
-    quoted_target = shlex.quote(target)
     if target_type == "pip":
-        sandbox_script = f"""
-pip download {quoted_target} --dest /tmp/pkg > /dev/null 2>&1
+        sandbox_script = """
+# Resource monitoring setup
+RESOURCE_FILE="/tmp/resources.json"
+echo '{"initial": {"mem_total_kb": '$(grep MemTotal /proc/meminfo | awk '{print $2}')', "cpu_count": '$(nproc)'}, "samples": []}' > "$RESOURCE_FILE"
+
+pip download "$TARGET" --dest /tmp/pkg > /dev/null 2>&1
 ip link set eth0 down
-strace -f -t -e trace=all -yy -s 1000 -o {log_file_in_container} pip install --no-index --find-links /tmp/pkg {quoted_target} > /dev/null 2>&1
+
+# Capture pre-install resources
+MEM_BEFORE=$(grep MemAvailable /proc/meminfo | awk '{print $2}' || echo "0")
+DISK_BEFORE=$(df /tmp --output=avail | tail -1)
+
+strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log pip install --no-index --find-links /tmp/pkg "$TARGET" > /dev/null 2>&1
+
+# Capture post-install resources
+MEM_AFTER=$(grep MemAvailable /proc/meminfo | awk '{print $2}' || echo "0")
+DISK_AFTER=$(df /tmp --output=avail | tail -1)
+FILE_COUNT=$(find /usr/local/lib/python* -type f 2>/dev/null | wc -l || echo "0")
+
+MEM_USED=$((MEM_BEFORE - MEM_AFTER))
+if [ "$MEM_USED" -lt 0 ]; then MEM_USED=0; fi
+DISK_USED=$((DISK_BEFORE - DISK_AFTER))
+if [ "$DISK_USED" -lt 0 ]; then DISK_USED=0; fi
+
+echo '{"peak_memory_kb": '"$MEM_USED"', "disk_used_kb": '"$DISK_USED"', "file_count": '"$FILE_COUNT"'}' > "$RESOURCE_FILE"
 """
     elif target_type == "npm":
-        sandbox_script = f"""
-npm install {quoted_target} --global --dry-run > /dev/null 2>&1
+        sandbox_script = """
+# Resource monitoring setup
+RESOURCE_FILE="/tmp/resources.json"
+echo '{"initial": {"mem_total_kb": '$(grep MemTotal /proc/meminfo | awk '{print $2}')', "cpu_count": '$(nproc)'}, "samples": []}' > "$RESOURCE_FILE"
+
+npm install "$TARGET" --global --dry-run > /dev/null 2>&1
 ip link set eth0 down
-strace -f -t -e trace=all -yy -s 1000 -o {log_file_in_container} npm install {quoted_target} --no-audit --no-fund > /dev/null 2>&1
+
+# Capture pre-install resources
+MEM_BEFORE=$(grep MemAvailable /proc/meminfo | awk '{print $2}' || echo "0")
+DISK_BEFORE=$(df /tmp --output=avail | tail -1)
+
+strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log npm install "$TARGET" --no-audit --no-fund > /dev/null 2>&1
+
+# Capture post-install resources
+MEM_AFTER=$(grep MemAvailable /proc/meminfo | awk '{print $2}' || echo "0")
+DISK_AFTER=$(df /tmp --output=avail | tail -1)
+FILE_COUNT=$(find "/usr/local/lib/node_modules/$TARGET" -type f 2>/dev/null | wc -l || echo "0")
+
+MEM_USED=$((MEM_BEFORE - MEM_AFTER))
+if [ "$MEM_USED" -lt 0 ]; then MEM_USED=0; fi
+DISK_USED=$((DISK_BEFORE - DISK_AFTER))
+if [ "$DISK_USED" -lt 0 ]; then DISK_USED=0; fi
+
+echo '{"peak_memory_kb": '"$MEM_USED"', "disk_used_kb": '"$DISK_USED"', "file_count": '"$FILE_COUNT"'}' > "$RESOURCE_FILE"
 """
     elif target_type == "shell":
-        volumes = {str(Path(target).parent): {"bind": "/samples", "mode": "ro"}}
-        quoted_filename = shlex.quote(Path(target).name)
-        sandbox_script = f"""
+        target_path = Path(target).resolve()
+        ws_root = Path(workspace_root).resolve() if workspace_root else Path.cwd().resolve()
+        # Reject mounts outside the workspace root to prevent path traversal
+        try:
+            target_path.relative_to(ws_root)
+        except ValueError:
+            console.print(f"\n[bold red]Error:[/] Shell target must be within workspace directory: {target}")
+            return ""
+        if not target_path.is_file():
+            console.print(f"\n[bold red]Error:[/] Shell target not found: {target_path}")
+            return ""
+        volumes[str(target_path.parent)] = {"bind": "/samples", "mode": "ro"}
+        env_vars["TARGET_FILENAME"] = target_path.name
+        sandbox_script = """
 ip link set eth0 down 2>/dev/null || true
-strace -f -t -e trace=all -yy -s 1000 -o {log_file_in_container} bash /samples/{quoted_filename} > /dev/null 2>&1 || true
+strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_FILENAME" > /dev/null 2>&1 || true
 """
     elif target_type == "dmg":
-        dmg_path = Path(target).absolute()
+        dmg_path = Path(target).absolute().resolve()
         if not dmg_path.exists():
             console.print(f"\n[bold red]Error:[/] DMG file not found: {dmg_path}")
             return ""
         volumes[str(dmg_path)] = {"bind": "/tmp/target.dmg", "mode": "ro"}
         # Pass the DMG path as an argument to the analysis script
-        sandbox_script = _DMG_ANALYZE_SCRIPT + f'\n_analyze_dmg "/tmp/target.dmg"'
+        sandbox_script = _DMG_ANALYZE_SCRIPT.replace('INPUT="$1"', 'INPUT="/tmp/target.dmg"')
     elif target_type == "exe":
-        exe_path = Path(target).absolute()
+        exe_path = Path(target).absolute().resolve()
         if not exe_path.exists():
             console.print(f"\n[bold red]Error:[/] EXE file not found: {exe_path}")
             return ""
         volumes[str(exe_path)] = {"bind": "/tmp/target.exe", "mode": "ro"}
-        sandbox_script = _EXE_ANALYZE_SCRIPT + f'\n_analyze_exe "/tmp/target.exe"'
+        sandbox_script = _EXE_ANALYZE_SCRIPT.replace('INPUT="$1"', 'INPUT="/tmp/target.exe"')
     else:
         console.print(f"[bold red]Unsupported Type:[/] {target_type}")
         return ""
 
     container = None
     try:
-        container = client.containers.run(
-            image=image_tag,
-            command=["/bin/bash", "-c", sandbox_script],
-            detach=True,
-            remove=False,
-            cap_add=["NET_ADMIN"],
-            volumes=volumes,
-        )
+        try:
+            container = client.containers.run(
+                image=image_tag,
+                command=["/bin/bash", "-c", sandbox_script],
+                detach=True,
+                remove=False,
+                cap_add=["NET_ADMIN"],
+                volumes=volumes,
+                environment=env_vars,
+            )
+        except Exception as e:
+            console.print(f"\n[bold red]Execution Error:[/] {e}")
+            return ""
 
         timeout = 180 if target_type == "exe" else (120 if target_type == "dmg" else 60)
         start_time = time.time()
@@ -312,6 +379,24 @@ strace -f -t -e trace=all -yy -s 1000 -o {log_file_in_container} bash /samples/{
 
             os.remove(temp_tar.name)
 
+            # Also try to retrieve resource monitoring data
+            resource_data = {}
+            try:
+                res_stream, _ = container.get_archive("/tmp/resources.json")
+                res_tar = tempfile.NamedTemporaryFile(suffix=".tar", delete=False)
+                with open(res_tar.name, "wb") as f:
+                    for chunk in res_stream:
+                        f.write(chunk)
+                with tarfile.open(res_tar.name) as tar:
+                    member = tar.getmembers()[0]
+                    extracted_f = tar.extractfile(member)
+                    if extracted_f:
+                        import json as _json
+                        resource_data = _json.loads(extracted_f.read().decode("utf-8"))
+                os.remove(res_tar.name)
+            except Exception:
+                pass  # Resource data is optional
+
             # Check if the log has real content
             log_size = log_file_path.stat().st_size
             if log_size < 50:
@@ -324,15 +409,17 @@ strace -f -t -e trace=all -yy -s 1000 -o {log_file_in_container} bash /samples/{
                     console.print(f"\n[bold red]Analysis Error:[/] {log_content}")
                     return ""
 
+            # If we have resource data, append it to the log as valid JSON
+            if resource_data:
+                import json as _json_out
+                with open(log_file_path, "a") as f:
+                    f.write(f"\n# TRACE_TREE_RESOURCE_DATA: {_json_out.dumps(resource_data)}\n")
+
             return str(log_file_path)
 
         except docker.errors.NotFound:
             console.print(f"\n[yellow]Warning:[/] No strace log was written for {target}.")
             return ""
-
-    except Exception as e:
-        console.print(f"\n[bold red]Execution Error:[/] {e}")
-        return ""
     finally:
         if container:
             try:
