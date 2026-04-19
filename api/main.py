@@ -73,7 +73,12 @@ def mock_analysis_task(analysis_id: str, package_name: str):
     3. NetworkX Graph Building
     4. ML Anomaly Detection (scikit-learn)
     """
-    pass
+    import time
+    time.sleep(2)  # Simulate processing delay
+    if analysis_id in mock_db:
+        mock_db[analysis_id]["status"] = "completed"
+        mock_db[analysis_id]["verdict"] = "CLEAN"
+        mock_db[analysis_id]["confidence_score"] = 0.50
 
 @app.post("/analyze", response_model=AnalysisResult)
 async def submit_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):

@@ -331,12 +331,12 @@ class MCPClient:
         # Read response with timeout — simple approach: read Content-Length
         # then read body.  This is a best-effort reader.
         try:
-            self._process.stdout.readline()  # Content-Length header
-            length_line = self._process.stdout.readline()
-            if not length_line.strip():
-                # Could be a bare body line
+            header_line = self._process.stdout.readline()  # Content-Length header
+            if not header_line.strip():
                 return None
-            length = int(length_line.split(":")[1].strip())
+            # Skip blank line separator
+            self._process.stdout.readline()
+            length = int(header_line.split(":")[1].strip())
             response_body = self._process.stdout.read(length)
             return json.loads(response_body)
         except Exception:

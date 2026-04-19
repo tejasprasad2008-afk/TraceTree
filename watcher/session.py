@@ -161,7 +161,7 @@ class SessionWatcher:
             target_type = "pip"  # sensible default
 
         log_path = self._safe_run_sandbox(str(target), target_type)
-        if log_path is None:
+        if not log_path:
             return {
                 "malicious": False,
                 "confidence": 0.0,
@@ -282,7 +282,7 @@ class SessionWatcher:
         :attr:`result_queue`.
         """
         log_path = self._safe_run_sandbox(package, target_type)
-        if log_path is None:
+        if not log_path:
             with self._lock:
                 self._state["log_path"] = None
             return

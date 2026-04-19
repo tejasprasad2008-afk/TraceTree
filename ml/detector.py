@@ -154,7 +154,7 @@ def update_model_from_gcs():
         client = storage.Client.create_anonymous_client()
         bucket = client.bucket("cascade-analyzer-models")
         blob = bucket.blob("model.pkl")
-        model_path.parent.mkdir(ex=True)
+        model_path.parent.mkdir(exist_ok=True)
         blob.download_to_filename(str(model_path))
         clear_model_cache()
         console.print("[bold green]✔ Model updated from GCS.[/]")
