@@ -193,7 +193,7 @@ def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
         
     return tree
 
-def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[bool, float, dict, dict, list, list, list, dict]:
+def perform_analysis(target: str, target_type: str, progress, console, workspace_root: str = None) -> Tuple[bool, float, dict, dict, list, list, list, dict]:
     """Helper to run the full sandbox → parse → graph → ML pipeline for a single target.
 
     Returns:
@@ -219,7 +219,7 @@ def perform_analysis(target: str, target_type: str, progress, console) -> Tuple[
     ngram_data: dict = {}
 
     task1 = progress.add_task(f"[yellow]Sandboxing {target} ({target_type})...", total=None)
-    log_path = run_sandbox(target, target_type)
+    log_path = run_sandbox(target, target_type, workspace_root=workspace_root)
     if log_path and Path(log_path).exists():
         progress.update(task1, description=f"[bold green]✔[/] [dim]Sandbox complete: {Path(log_path).name}[/]")
     else:
@@ -346,7 +346,7 @@ def analyze(
             console=console,
             transient=False,
         ) as progress:
-            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console)
+            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()))
 
         if not graph_data:
             continue
@@ -749,9 +749,9 @@ def mcp(
 _SESSION_DIR = Path("/tmp/tracetree_sessions")
 
 
-def _run_analysis_for_diff(target: str, target_type: str, progress, console) -> Dict[str, Any]:
+def _run_analysis_for_diff(target: str, target_type: str, progress, console, workspace_root: str = None) -> Dict[str, Any]:
     """Run analysis and return a dict suitable for diff comparison."""
-    is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(target, target_type, progress, console)
+    is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(target, target_type, progress, console, workspace_root=workspace_root)
     return {
         "parsed_data": parsed_data,
         "graph_data": graph_data,
@@ -1067,7 +1067,7 @@ def check(
     else:
         target_type = "pip"
 
-    log_path = run_sandbox(str(target_path), target_type)
+    log_path = run_sandbox(str(target_path), target_type, workspace_root=str(repo_path))
     if not log_path or not Path(log_path).exists():
         console.print("[bold red]Error:[/] Sandbox failed — check that Docker is running.")
         return
@@ -1167,7 +1167,7 @@ def diff_cmd(
         console=console,
         transient=False,
     ) as progress:
-        result_a = _run_analysis_for_diff(target_a, type_a, progress, console)
+        result_a = _run_analysis_for_diff(target_a, type_a, progress, console, workspace_root=str(Path.cwd()))
 
     if not result_a.get("graph_data"):
         console.print("[bold red]Error:[/] Baseline analysis failed.")
@@ -1182,7 +1182,7 @@ def diff_cmd(
         console=console,
         transient=False,
     ) as progress:
-        result_b = _run_analysis_for_diff(target_b, type_b, progress, console)
+        result_b = _run_analysis_for_diff(target_b, type_b, progress, console, workspace_root=str(Path.cwd()))
 
     if not result_b.get("graph_data"):
         console.print("[bold red]Error:[/] Candidate analysis failed.")

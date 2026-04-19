@@ -162,7 +162,11 @@ def scan_with_yara(
                     "severity": m.meta.get("severity", "unknown"),
                     "description": m.meta.get("description", ""),
                     "file_path": str(fpath),
-                    "matched_strings": [s for s, _ in m.strings],
+                    "matched_strings": [
+                        instance.matched_data.decode('utf-8', errors='replace')
+                        for string_match in m.strings
+                        for instance in string_match.instances
+                    ],
                 })
         except Exception as e:
             log.debug("YARA scan failed for %s: %s", fpath, e)

@@ -197,18 +197,30 @@ def _parse_syscall_categories(log_path: str) -> List[str]:
                 line = line.strip()
                 if not line:
                     continue
-                # Strace format: timestamp syscall_name(args) = result
-                # or: timestamp <... syscall_name resumed>) = result
-                parts = line.split(None, 2)
+
+                # Strace -f -t format: [PID] timestamp syscall(args) = result
+                # Example: "1234 12:34:56.789012 open(\"/etc/passwd\", O_RDONLY) = 3"
+                # or: "1234 <... open resumed>) = 3"
+                parts = line.split(None, 3)
                 if len(parts) < 2:
                     continue
 
-                # Extract syscall name
-                syscall = parts[1]
+                idx = 0
+                # Skip numeric PID token if present
+                if parts[idx].isdigit():
+                    idx += 1
+                # Skip timestamp token (contains ':') if present
+                if idx < len(parts) and ':' in parts[idx]:
+                    idx += 1
+                # Now parts[idx] should be the syscall token
+                if idx >= len(parts):
+                    continue
+
+                syscall = parts[idx]
                 if syscall.startswith("<..."):
                     # Continuation line — try to find the actual syscall name
-                    if len(parts) > 2 and "(" in parts[2]:
-                        syscall = parts[2].split("(")[0]
+                    if idx + 1 < len(parts) and "(" in parts[idx + 1]:
+                        syscall = parts[idx + 1].split("(")[0]
                     else:
                         continue
                 elif "(" in syscall:

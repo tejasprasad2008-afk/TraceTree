@@ -181,7 +181,7 @@ echo "[exe] Analysis complete — log: $LOG_FILE" >&2
 # --------------------------------------------------------------------------- #
 
 
-def run_sandbox(target: str, target_type: str = "pip") -> str:
+def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = None) -> str:
     """
     Executes the package/installer logic inside an isolated Docker container.
     Captures syscalls using strace.
@@ -279,10 +279,10 @@ echo '{"peak_memory_kb": '"$MEM_USED"', "disk_used_kb": '"$DISK_USED"', "file_co
 """
     elif target_type == "shell":
         target_path = Path(target).resolve()
-        workspace_root = Path.cwd().resolve()
+        ws_root = Path(workspace_root).resolve() if workspace_root else Path.cwd().resolve()
         # Reject mounts outside the workspace root to prevent path traversal
         try:
-            target_path.relative_to(workspace_root)
+            target_path.relative_to(ws_root)
         except ValueError:
             console.print(f"\n[bold red]Error:[/] Shell target must be within workspace directory: {target}")
             return ""
