@@ -138,13 +138,15 @@ def _build_sarif_run(
     confidence: float,
 ) -> Dict[str, Any]:
     """Build a single SARIF run dict."""
+    # Per-run rule index cache — reset for each report to ensure conformant indices
+    rule_index_cache: Dict[str, int] = {}
     results: List[Dict[str, Any]] = []
 
     # --- Signature match results ---
     for sig in signature_matches:
         results.append({
             "ruleId": f"signature/{sig['name']}",
-            "ruleIndex": _rule_index("signature", sig["name"]),
+            "ruleIndex": _rule_index("signature", sig["name"], rule_index_cache),
             "level": _severity_to_sarif_level(sig.get("severity", 5)),
             "message": {
                 "text": f"Behavioral signature matched: {sig['name']} — {sig['description']}",
@@ -159,7 +161,7 @@ def _build_sarif_run(
     for tp in temporal_patterns:
         results.append({
             "ruleId": f"temporal/{tp['pattern_name']}",
-            "ruleIndex": _rule_index("temporal", tp["pattern_name"]),
+            "ruleIndex": _rule_index("temporal", tp["pattern_name"], rule_index_cache),
             "level": _severity_to_sarif_level(tp.get("severity", 5)),
             "message": {
                 "text": f"Temporal pattern detected: {tp['pattern_name']} — {tp.get('description', '')}",
@@ -174,7 +176,7 @@ def _build_sarif_run(
     for ym in yara_matches:
         results.append({
             "ruleId": f"yara/{ym['rule_name']}",
-            "ruleIndex": _rule_index("yara", ym["rule_name"]),
+            "ruleIndex": _rule_index("yara", ym["rule_name"], rule_index_cache),
             "level": _severity_to_sarif_level(_yara_severity_to_num(ym.get("severity", "medium"))),
             "message": {
                 "text": f"YARA rule matched: {ym['rule_name']} — {ym['description']}",
@@ -198,7 +200,7 @@ def _build_sarif_run(
         for sg in suspicious_ng:
             results.append({
                 "ruleId": f"ngram/{sg['ngram']}",
-                "ruleIndex": _rule_index("ngram", sg["ngram"]),
+                "ruleIndex": _rule_index("ngram", sg["ngram"], rule_index_cache),
                 "level": "error",
                 "message": {
                     "text": f"Suspicious syscall n-gram: {sg['ngram']} — {sg['description']} (count: {sg['count']})",
@@ -231,7 +233,7 @@ def _build_sarif_run(
                 "version": "1.0.0",
                 "informationUri": "https://github.com/tracetree/tracetree",
                 "rules": _build_sarif_rules(
-                    signature_matches, temporal_patterns, yara_matches, ngram_data
+                    signature_matches, temporal_patterns, yara_matches, ngram_data, rule_index_cache
                 ),
             },
         },
@@ -255,15 +257,12 @@ def _build_sarif_run(
 # --------------------------------------------------------------------------- #
 
 # Cache for rule index lookups
-_rule_indices: Dict[str, int] = {}
-
-
-def _rule_index(category: str, name: str) -> int:
-    """Get or assign a rule index."""
+def _rule_index(category: str, name: str, cache: Dict[str, int]) -> int:
+    """Get or assign a rule index from the per-run cache."""
     key = f"{category}/{name}"
-    if key not in _rule_indices:
-        _rule_indices[key] = len(_rule_indices)
-    return _rule_indices[key]
+    if key not in cache:
+        cache[key] = len(cache)
+    return cache[key]
 
 
 def _build_sarif_rules(
@@ -271,29 +270,16 @@ def _build_sarif_rules(
     temporal_patterns: List[Dict[str, Any]],
     yara_matches: List[Dict[str, Any]],
     ngram_data: Dict[str, Any],
+    rule_index_cache: Dict[str, int],
 ) -> List[Dict[str, Any]]:
-    """Build the SARIF rules array."""
+    """
+    Build the SARIF rules array.
+    Rules must be appended in the same order as _build_sarif_run assigns ruleIndex
+    values so that indices align: signature → temporal → yara → ngram → verdict.
+    """
     rules: List[Dict[str, Any]] = []
 
-    # Verdict rule (always present)
-    rules.append({
-        "id": "tracetree/verdict",
-        "name": "TraceTree Verdict",
-        "shortDescription": {
-            "text": "Overall malicious/clean verdict from TraceTree behavioral analysis",
-        },
-        "fullDescription": {
-            "text": "TraceTree combines syscall tracing, behavioral signatures, temporal patterns, YARA rules, and n-gram fingerprinting to detect supply chain attacks.",
-        },
-        "defaultConfiguration": {
-            "level": "error",
-        },
-        "properties": {
-            "tags": ["supply-chain", "behavioral-analysis", "runtime"],
-        },
-    })
-
-    # Signature rules
+    # Signature rules (index 0, 1, 2, ...)
     seen = set()
     for sig in signature_matches:
         if sig["name"] not in seen:
@@ -371,6 +357,24 @@ def _build_sarif_rules(
                         "tags": ["n-gram-fingerprint"],
                     },
                 })
+
+    # Verdict rule (always last — index = len(rules) after all others appended)
+    rules.append({
+        "id": "tracetree/verdict",
+        "name": "TraceTree Verdict",
+        "shortDescription": {
+            "text": "Overall malicious/clean verdict from TraceTree behavioral analysis",
+        },
+        "fullDescription": {
+            "text": "TraceTree combines syscall tracing, behavioral signatures, temporal patterns, YARA rules, and n-gram fingerprinting to detect supply chain attacks.",
+        },
+        "defaultConfiguration": {
+            "level": "error",
+        },
+        "properties": {
+            "tags": ["supply-chain", "behavioral-analysis", "runtime"],
+        },
+    })
 
     return rules
 

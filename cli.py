@@ -806,7 +806,7 @@ def _acquire_session_lock(repo_path: Path) -> Optional[Path]:
             # Stale lock from the race winner — clean up and retry once
             lock.unlink(missing_ok=True)
             try:
-                fd = os.open(str(lock), os.O_CREAT | O_EXCL | os.O_WRONLY, 0o644)
+                fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
                 with os.fdopen(fd, 'w') as f:
                     f.write(str(os.getpid()))
                 return lock

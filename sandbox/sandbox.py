@@ -409,10 +409,11 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
                     console.print(f"\n[bold red]Analysis Error:[/] {log_content}")
                     return ""
 
-            # If we have resource data, append it to the log as a comment
+            # If we have resource data, append it to the log as valid JSON
             if resource_data:
+                import json as _json_out
                 with open(log_file_path, "a") as f:
-                    f.write(f"\n# TRACE_TREE_RESOURCE_DATA: {resource_data}\n")
+                    f.write(f"\n# TRACE_TREE_RESOURCE_DATA: {_json_out.dumps(resource_data)}\n")
 
             return str(log_file_path)
 
