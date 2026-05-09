@@ -1,6 +1,6 @@
 {
   "env": {
-    "NVIDIA_API_KEY": "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"
+    "NVIDIA_API_KEY": "${NVIDIA_API_KEY}"
   },
   "modelProviders": {
     "nvidia": [
