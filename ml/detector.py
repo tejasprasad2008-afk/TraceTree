@@ -105,15 +105,34 @@ def train_baseline_model() -> IsolationForest:
 #  Model loading
 # --------------------------------------------------------------------------- #
 
-def get_ml_model():
+def get_ml_model(version: str = None):
     """
     Lazily loads the Supervised RandomForest if available locally or from GCS.
     Falls back to an IsolationForest trained on hardcoded clean baselines.
+    
+    Args:
+        version: Optional version string (e.g., "v1.0", "v2.0-rc1").
+                 If None, uses the latest/default version.
     """
     global _MODEL_CACHE
     if _MODEL_CACHE is not None:
         return _MODEL_CACHE
 
+    # Try versioning system first
+    if version:
+        from ml.models.versioning import ModelVersionManager
+        manager = ModelVersionManager()
+        version_path = manager.get_version(version)
+        if version_path and version_path.exists():
+            try:
+                with open(version_path, "rb") as f:
+                    _MODEL_CACHE = pickle.load(f)
+                    console.print(f"[dim]Loaded model version {version}[/]")
+                    return _MODEL_CACHE
+            except Exception as e:
+                console.print(f"[bold yellow]Failed to load version {version}: {e}[/]")
+    
+    # Fall back to legacy path or GCS
     model_path = Path(__file__).parent / "model.pkl"
 
     if not model_path.exists():
