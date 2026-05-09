@@ -1,0 +1,44 @@
+trigger:
+- main
+- feat/phase1-quick-wins-model-training
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.11'
+  displayName: 'Use Python 3.11'
+
+- checkout: self
+  persistCredentials: true
+  displayName: 'Checkout Repo'
+
+- script: |
+    python -m pip install --upgrade pip
+    pip install -e .
+  displayName: 'Install dependencies'
+
+- script: |
+    # Ensure Docker is running and pull the sandbox image
+    # The sandbox module builds it if missing, but we can pre-build/pull if needed
+    docker build -t cascade-sandbox:latest ./sandbox
+  displayName: 'Build Sandbox Docker Image'
+
+- script: |
+    python3 -m ml.trainer
+  displayName: 'Run Model Training'
+  env:
+    # If GCS upload is needed, we'd need GOOGLE_APPLICATION_CREDENTIALS
+    # For now, we focus on local file generation and git push
+    MALWAREBAZAAR_AUTH_KEY: $(MALWAREBAZAAR_AUTH_KEY)
+
+- script: |
+    git config --global user.email "azure-pipelines@dev.azure.com"
+    git config --global user.name "Azure Pipelines"
+    git add ml/model.pkl
+    git commit -m "chore: update trained model [skip ci]" || echo "No changes to commit"
+    git push origin HEAD:$(Build.SourceBranchName)
+  displayName: 'Push trained model back to repo'
+  condition: succeeded()

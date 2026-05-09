@@ -138,6 +138,15 @@ def build_cascade_graph(
                     )
                     temporal_edge_count += 1
 
+    # Calculate centrality measures
+    try:
+        # Simple betweenness identifies "bridge" nodes.
+        betweenness = nx.betweenness_centrality(G)
+        degree = nx.degree_centrality(G)
+    except Exception:
+        betweenness = {}
+        degree = {}
+
     # Convert to Cytoscape format
     cyto_nodes = [
         {
@@ -147,6 +156,8 @@ def build_cascade_graph(
                 "type": d.get("type", "unknown"),
                 "severity": d.get("severity", 0.0),
                 "signature_tags": d.get("signature_tags", []),
+                "betweenness_centrality": round(betweenness.get(n, 0.0), 4),
+                "degree_centrality": round(degree.get(n, 0.0), 4),
             }
         }
         for n, d in G.nodes(data=True)
@@ -185,6 +196,8 @@ def build_cascade_graph(
         ),
         "signature_match_count": len(signature_matches) if signature_matches else 0,
         "temporal_edge_count": temporal_edge_count,
+        "avg_betweenness": round(sum(betweenness.values()) / len(betweenness) if betweenness else 0.0, 4),
+        "max_degree": round(max(degree.values(), default=0.0), 4),
     }
 
     return {

@@ -1,0 +1,47 @@
+{
+  "env": {
+    "NVIDIA_API_KEY": "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"
+  },
+  "modelProviders": {
+    "nvidia": [
+      {
+        "id": "z-ai/glm-5.1",
+        "name": "GLM-5.1",
+        "envKey": "NVIDIA_API_KEY",
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "generationConfig": {
+          "timeout": 60000,
+          "maxRetries": 3,
+          "enableCacheControl": true,
+          "contextWindowSize": 128000,
+          "modalities": {
+            "image": false
+          },
+          "customHeaders": {
+            "X-Client-Request-ID": "req-123"
+          },
+          "samplingParams": {
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "max_tokens": 4096,
+            "presence_penalty": 0.1,
+            "frequency_penalty": 0.1
+          }
+        }
+      },
+      {
+        "id": "z-ai/glm-5.1",
+        "name": "GLM-5.1 (Fast)",
+        "envKey": "NVIDIA_API_KEY",
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "generationConfig": {
+          "timeout": 30000,
+          "samplingParams": {
+            "temperature": 0.5,
+            "max_tokens": 2048
+          }
+        }
+      }
+    ]
+  }
+}
