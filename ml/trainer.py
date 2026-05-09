@@ -17,8 +17,8 @@ def train_model():
     
     # Must correctly resolve absolute paths to data lists
     base_dir = Path(__file__).parent.parent
-    malicious_pkgs = load_dataset(base_dir / "data" / "malicious_packages.txt")
-    clean_pkgs = load_dataset(base_dir / "data" / "clean_packages.txt")
+    malicious_pkgs = load_dataset(base_dir / "data" / "malicious_packages_expanded.txt")
+    clean_pkgs = load_dataset(base_dir / "data" / "clean_packages_expanded.txt")
     
     if not malicious_pkgs or not clean_pkgs:
         console.print("[bold red]Error:[/] Dataset files missing in data/ directory.")
@@ -29,45 +29,55 @@ def train_model():
     from graph.builder import build_cascade_graph
     from ml.detector import map_features, clear_model_cache
     
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
     X = []
     y = []
     
     # Supervised Binary Representation
     all_packages = [(pkg, 1) for pkg in malicious_pkgs] + [(pkg, 0) for pkg in clean_pkgs]
     
+    def process_package(pkg, label):
+        try:
+            log_path = run_sandbox(pkg)
+            if not log_path:
+                return None
+            parsed = parse_strace_log(log_path)
+            graph = build_cascade_graph(parsed)
+            features = map_features(graph, parsed)
+            return features, label
+        except Exception as e:
+            console.print(f"\n[red]Failed to extract features for {pkg}: {e}[/]")
+            return None
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console
     ) as progress:
-        task = progress.add_task(f"[cyan]Training model sequentially across {len(all_packages)} packages...", total=len(all_packages))
+        task = progress.add_task(f"[cyan]Training model in parallel across {len(all_packages)} packages...", total=len(all_packages))
         
-        for pkg, label in all_packages:
-            progress.update(task, description=f"[cyan]Executing sandbox targeting {pkg}...")
+        # Limit concurrency to avoid overloading the system
+        max_workers = int(os.environ.get("TRACETREE_TRAIN_WORKERS", 4))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(process_package, pkg, label): pkg for pkg, label in all_packages}
             
-            try:
-                log_path = run_sandbox(pkg)
-                if not log_path:
-                    progress.advance(task)
-                    continue
-                    
-                parsed = parse_strace_log(log_path)
-                graph = build_cascade_graph(parsed)
-                features = map_features(graph, parsed)
-                
-                X.append(features)
-                y.append(label)
-            except Exception as e:
-                console.print(f"\n[red]Failed to extract features for {pkg}: {e}[/]")
-            
-            progress.advance(task)
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    features, label = result
+                    X.append(features)
+                    y.append(label)
+                progress.advance(task)
 
     if not X:
         console.print("[bold red]Failed to extract meaningful features from any sandbox execution.[/]")
         return
         
     console.print("[green]Optimizing RandomForestClassifier weights...[/]")
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    # Phase 1: Add class_weight='balanced' to handle severely imbalanced dataset
+    # (32 clean vs 33 malicious packages is nearly 50/50 but model will generalize better)
+    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
     model.fit(X, y)
     
     model_dir = base_dir / "ml"
@@ -77,6 +87,13 @@ def train_model():
     # Cache model state internally
     with open(model_path, 'wb') as f:
         pickle.dump(model, f)
+        
+    # Also save to Azure ML 'outputs' directory if it exists
+    outputs_dir = Path("outputs")
+    if outputs_dir.exists():
+        with open(outputs_dir / "model.pkl", 'wb') as f:
+            pickle.dump(model, f)
+        console.print("[bold green]✔ Model also saved to Azure ML outputs directory.[/]")
         
     # Invalidate in-memory cache to ensure the new model is loaded
     clear_model_cache()

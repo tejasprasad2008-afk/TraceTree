@@ -42,6 +42,22 @@ SEVERITY_WEIGHTS: Dict[str, float] = {
     "pipe": 0.5,
     "pipe2": 0.5,
     "dup2": 2.0,
+    # ===== Phase 1: Critical missing syscalls =====
+    # Code injection detection
+    "ptrace": 9.0,
+    # In-memory executable creation (common malware evasion)
+    "memfd_create": 9.0,
+    # Process control (sleep, hide, persistence)
+    "prctl": 6.0,
+    # Sandbox evasion via syscall filtering
+    "seccomp": 8.0,
+    # Device manipulation, TTY tricks
+    "ioctl": 3.0,
+    # Kernel module loading
+    "init_module": 10.0,
+    "finit_module": 10.0,
+    # eBPF injection
+    "bpf": 9.0,
 }
 
 # Known-benign binaries that are expected during a normal pip/npm install.
@@ -630,6 +646,85 @@ def parse_strace_log(log_path: str) -> Dict[str, Any]:
             syscalls_executed.append(_make_event(
                 syscall,
                 "pipe",
+                severity,
+                {},
+            ))
+
+        # ------------------------------------------------------------------ #
+        #  Phase 1: Additional critical syscalls (ptrace, memfd_create, prctl, seccomp, ioctl, bpf)
+        # ------------------------------------------------------------------ #
+        elif syscall == "ptrace":
+            # ptrace is a code injection detection technique - very suspicious
+            severity = max(severity, 9.0)
+            suspicious_flags.append(f"ptrace detected in PID {pid} — possible code injection")
+            syscalls_executed.append(_make_event(
+                syscall,
+                "ptrace",
+                severity,
+                {},
+            ))
+
+        elif syscall == "memfd_create":
+            # memfd_create creates in-memory executables - common malware evasion
+            severity = max(severity, 9.0)
+            suspicious_flags.append(f"memfd_create detected in PID {pid} — possible in-memory executable")
+            syscalls_executed.append(_make_event(
+                syscall,
+                "memfd",
+                severity,
+                {},
+            ))
+
+        elif syscall == "prctl":
+            # prctl can be used for process hiding, persistence, sleep control
+            severity = max(severity, 6.0)
+            suspicious_flags.append(f"prctl detected in PID {pid} — possible process control")
+            syscalls_executed.append(_make_event(
+                syscall,
+                "prctl",
+                severity,
+                {},
+            ))
+
+        elif syscall == "seccomp":
+            # seccomp is syscall filtering - sandbox evasion
+            severity = max(severity, 8.0)
+            suspicious_flags.append(f"seccomp detected in PID {pid} — possible sandbox evasion")
+            syscalls_executed.append(_make_event(
+                syscall,
+                "seccomp",
+                severity,
+                {},
+            ))
+
+        elif syscall in ("init_module", "finit_module"):
+            # Kernel module loading - extremely suspicious
+            severity = max(severity, 10.0)
+            suspicious_flags.append(f"Kernel module loading ({syscall}) detected in PID {pid}")
+            syscalls_executed.append(_make_event(
+                syscall,
+                "kernel_module",
+                severity,
+                {},
+            ))
+
+        elif syscall == "bpf":
+            # eBPF injection
+            severity = max(severity, 9.0)
+            suspicious_flags.append(f"bpf syscall detected in PID {pid} — possible eBPF injection")
+            syscalls_executed.append(_make_event(
+                syscall,
+                "bpf",
+                severity,
+                {},
+            ))
+
+        elif syscall == "ioctl":
+            # Device manipulation, TTY tricks
+            severity = max(severity, 3.0)
+            syscalls_executed.append(_make_event(
+                syscall,
+                "ioctl",
                 severity,
                 {},
             ))

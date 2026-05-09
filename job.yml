@@ -1,0 +1,20 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+command: |
+  # Install sandbox dependencies
+  apt-get update && apt-get install -y strace curl iproute2 nodejs npm wine64 p7zip-full cabextract
+  # Install project
+  pip install -e .
+  # Set environment variable to use direct mode and parallel workers
+  export TRACETREE_SANDBOX_MODE=direct
+  export TRACETREE_TRAIN_WORKERS=4
+  # Ensure logs directory exists
+  mkdir -p logs
+  # Run trainer
+  python3 -m ml.trainer
+code: .
+environment:
+  image: docker.io/library/python:3.11-slim-bookworm
+compute: azureml:cpu-cluster
+display_name: TraceTree-Model-Training
+experiment_name: TraceTree-Training
+description: Training the TraceTree model on expanded dataset.

