@@ -2,15 +2,15 @@
 
 <cite>
 **Referenced Files in This Document**
-- [cli.py](file://TraceTree/cli.py)
-- [parser.py](file://TraceTree/monitor/parser.py)
-- [signatures.py](file://TraceTree/monitor/signatures.py)
-- [timeline.py](file://TraceTree/monitor/timeline.py)
-- [builder.py](file://TraceTree/graph/builder.py)
-- [detector.py](file://TraceTree/ml/detector.py)
-- [signatures.json](file://TraceTree/data/signatures.json)
-- [README.md](file://TraceTree/README.md)
-- [spider.py](file://TraceTree/mascot/spider.py)
+- [cli.py](file://cli.py)
+- [parser.py](file://monitor/parser.py)
+- [signatures.py](file://monitor/signatures.py)
+- [timeline.py](file://monitor/timeline.py)
+- [builder.py](file://graph/builder.py)
+- [detector.py](file://ml/detector.py)
+- [signatures.json](file://data/signatures.json)
+- [README.md](file://README.md)
+- [spider.py](file://mascot/spider.py)
 </cite>
 
 ## Table of Contents
@@ -53,16 +53,16 @@ A --> I["Rich Panels + Tree UI"]
 ```
 
 **Diagram sources**
-- [cli.py:261-371](file://TraceTree/cli.py#L261-L371)
-- [parser.py:340-679](file://TraceTree/monitor/parser.py#L340-L679)
-- [signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:261-371](file://cli.py#L261-L371)
+- [parser.py:340-679](file://monitor/parser.py#L340-L679)
+- [signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
 
 **Section sources**
-- [README.md:9-41](file://TraceTree/README.md#L9-L41)
-- [cli.py:261-371](file://TraceTree/cli.py#L261-L371)
+- [README.md:9-41](file://README.md#L9-L41)
+- [cli.py:261-371](file://cli.py#L261-L371)
 
 ## Core Components
 - CLI orchestration and Rich UI rendering
@@ -73,12 +73,12 @@ A --> I["Rich Panels + Tree UI"]
 - ML detector: anomaly detection with severity boosting
 
 **Section sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [parser.py:340-679](file://TraceTree/monitor/parser.py#L340-L679)
-- [signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [parser.py:340-679](file://monitor/parser.py#L340-L679)
+- [signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
 
 ## Architecture Overview
 The cascade-analyze pipeline transforms a target into a syscall trace, parses it into structured events, detects behavioral signatures and temporal patterns, constructs a cascade graph, and applies ML anomaly detection to produce a final verdict with confidence.
@@ -110,12 +110,12 @@ CLI-->>User : Rich panels + cascade tree + verdict
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [parser.py:340-679](file://TraceTree/monitor/parser.py#L340-L679)
-- [signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [parser.py:340-679](file://monitor/parser.py#L340-L679)
+- [signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
 
 ## Detailed Component Analysis
 
@@ -173,11 +173,11 @@ GraphBuilder --> CascadeEdge : "creates"
 ```
 
 **Diagram sources**
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
 
 **Section sources**
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [cli.py:125-179](file://TraceTree/cli.py#L125-L179)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [cli.py:125-179](file://cli.py#L125-L179)
 
 ### Raw Parser Output and Flagged Behaviors
 The parser extracts syscall events, assigns severity, classifies destinations, and flags suspicious activities. Flagged behaviors are presented as bullet lists in a Rich Panel.
@@ -201,11 +201,11 @@ The parser extracts syscall events, assigns severity, classifies destinations, a
   - If none, shows a green message indicating no suspicious footprints
 
 **Section sources**
-- [parser.py:11-45](file://TraceTree/monitor/parser.py#L11-L45)
-- [parser.py:250-316](file://TraceTree/monitor/parser.py#L250-L316)
-- [parser.py:477-596](file://TraceTree/monitor/parser.py#L477-L596)
-- [parser.py:654-669](file://TraceTree/monitor/parser.py#L654-L669)
-- [cli.py:317-320](file://TraceTree/cli.py#L317-L320)
+- [parser.py:11-45](file://monitor/parser.py#L11-L45)
+- [parser.py:250-316](file://monitor/parser.py#L250-L316)
+- [parser.py:477-596](file://monitor/parser.py#L477-L596)
+- [parser.py:654-669](file://monitor/parser.py#L654-L669)
+- [cli.py:317-320](file://cli.py#L317-L320)
 
 ### Behavioral Signatures Matching
 Behavioral signatures are defined in a JSON file and matched against parsed events. Each match includes evidence and severity.
@@ -231,10 +231,10 @@ Behavioral signatures are defined in a JSON file and matched against parsed even
   - Summary includes pattern name, severity, description, and evidence snippets
 
 **Section sources**
-- [signatures.json:1-246](file://TraceTree/data/signatures.json#L1-L246)
-- [signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [signatures.py:196-236](file://TraceTree/monitor/signatures.py#L196-L236)
-- [cli.py:322-339](file://TraceTree/cli.py#L322-L339)
+- [signatures.json:1-246](file://data/signatures.json#L1-L246)
+- [signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [signatures.py:196-236](file://monitor/signatures.py#L196-L236)
+- [cli.py:322-339](file://cli.py#L322-L339)
 
 ### Temporal Execution Patterns
 Temporal patterns detect suspicious time-based sequences from timestamped events.
@@ -251,9 +251,9 @@ Temporal patterns detect suspicious time-based sequences from timestamped events
   - Human-readable summaries with pattern names and descriptions
 
 **Section sources**
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [timeline.py:100-281](file://TraceTree/monitor/timeline.py#L100-L281)
-- [cli.py:341-349](file://TraceTree/cli.py#L341-L349)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [timeline.py:100-281](file://monitor/timeline.py#L100-L281)
+- [cli.py:341-349](file://cli.py#L341-L349)
 
 ### Final Verdict Generation and Confidence Scores
 The final verdict combines ML anomaly detection with severity scoring and temporal pattern boosts.
@@ -276,9 +276,9 @@ The final verdict combines ML anomaly detection with severity scoring and tempor
   - Summary line listing matched signatures and temporal patterns
 
 **Section sources**
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
-- [detector.py:170-232](file://TraceTree/ml/detector.py#L170-L232)
-- [cli.py:351-370](file://TraceTree/cli.py#L351-L370)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
+- [detector.py:170-232](file://ml/detector.py#L170-L232)
+- [cli.py:351-370](file://cli.py#L351-L370)
 
 ### Rich Console Formatting, Panels, and Visual Indicators
 The CLI uses Rich to render a polished, readable output with consistent styling and layout.
@@ -306,10 +306,10 @@ The CLI uses Rich to render a polished, readable output with consistent styling 
   - Spider mascot panel for watch/check modes
 
 **Section sources**
-- [cli.py:27-66](file://TraceTree/cli.py#L27-L66)
-- [cli.py:125-179](file://TraceTree/cli.py#L125-L179)
-- [cli.py:317-370](file://TraceTree/cli.py#L317-L370)
-- [spider.py:4-59](file://TraceTree/mascot/spider.py#L4-L59)
+- [cli.py:27-66](file://cli.py#L27-L66)
+- [cli.py:125-179](file://cli.py#L125-L179)
+- [cli.py:317-370](file://cli.py#L317-L370)
+- [spider.py:4-59](file://mascot/spider.py#L4-L59)
 
 ### Example Output Scenarios
 Below are representative scenarios interpreted from the code’s output rendering logic.
@@ -335,8 +335,8 @@ Below are representative scenarios interpreted from the code’s output renderin
   - Summary line enumerates matched signatures and temporal patterns
 
 **Section sources**
-- [cli.py:317-370](file://TraceTree/cli.py#L317-L370)
-- [README.md:125-174](file://TraceTree/README.md#L125-L174)
+- [cli.py:317-370](file://cli.py#L317-L370)
+- [README.md:125-174](file://README.md#L125-L174)
 
 ### Cascade Tree Construction Algorithm
 The cascade tree is a hierarchical representation of process lineage derived from the parsed data.
@@ -370,11 +370,11 @@ Recurse --> |No| End(["End"])
 ```
 
 **Diagram sources**
-- [cli.py:154-179](file://TraceTree/cli.py#L154-L179)
-- [cli.py:125-152](file://TraceTree/cli.py#L125-L152)
+- [cli.py:154-179](file://cli.py#L154-L179)
+- [cli.py:125-152](file://cli.py#L125-L152)
 
 **Section sources**
-- [cli.py:125-179](file://TraceTree/cli.py#L125-L179)
+- [cli.py:125-179](file://cli.py#L125-L179)
 
 ### Output Customization and Alternative Formats
 - Output format for MCP subcommand:
@@ -386,8 +386,8 @@ Recurse --> |No| End(["End"])
   - cascade-analyze supports bulk analysis via bulk files
 
 **Section sources**
-- [cli.py:442-443](file://TraceTree/cli.py#L442-L443)
-- [cli.py:680-684](file://TraceTree/cli.py#L680-L684)
+- [cli.py:442-443](file://cli.py#L442-L443)
+- [cli.py:680-684](file://cli.py#L680-L684)
 
 ## Dependency Analysis
 The cascade-analyze pipeline depends on a tight integration among modules. The CLI orchestrates the flow, while parser, signatures, timeline, graph builder, and detector form the analysis backbone.
@@ -406,15 +406,15 @@ GB --> ML
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [parser.py:340-679](file://TraceTree/monitor/parser.py#L340-L679)
-- [signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [parser.py:340-679](file://monitor/parser.py#L340-L679)
+- [signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
 
 **Section sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
+- [cli.py:181-259](file://cli.py#L181-L259)
 
 ## Performance Considerations
 - Graph construction scales with event count and signature coverage; temporal edges add O(n) edges within time windows
@@ -433,9 +433,9 @@ GB --> ML
   - Best-effort execution with fallbacks; warnings are printed and analysis proceeds
 
 **Section sources**
-- [cli.py:73-109](file://TraceTree/cli.py#L73-L109)
-- [cli.py:200-216](file://TraceTree/cli.py#L200-L216)
-- [cli.py:225-235](file://TraceTree/cli.py#L225-L235)
+- [cli.py:73-109](file://cli.py#L73-L109)
+- [cli.py:200-216](file://cli.py#L200-L216)
+- [cli.py:225-235](file://cli.py#L225-L235)
 
 ## Conclusion
 The cascade-analyze output presents a comprehensive, interpretable view of runtime behavior. The cascade graph reveals process lineage and system call relationships, while flagged behaviors, signatures, and temporal patterns provide contextual evidence. The final verdict combines ML insights with severity-weighted heuristics and confidence boosting, enabling clear decisions with quantified certainty.
@@ -453,8 +453,8 @@ The cascade-analyze output presents a comprehensive, interpretable view of runti
   - temporal: intra-process adjacency within 5s
 
 **Section sources**
-- [builder.py:50-110](file://TraceTree/graph/builder.py#L50-L110)
-- [builder.py:111-140](file://TraceTree/graph/builder.py#L111-L140)
+- [builder.py:50-110](file://graph/builder.py#L50-L110)
+- [builder.py:111-140](file://graph/builder.py#L111-L140)
 
 ### Appendix B: Severity Levels and Evidence Collection
 - Severity levels:
@@ -464,8 +464,8 @@ The cascade-analyze output presents a comprehensive, interpretable view of runti
   - Temporal patterns: list of triggering events and time windows
 
 **Section sources**
-- [signatures.py:474-487](file://TraceTree/monitor/signatures.py#L474-L487)
-- [timeline.py:334-352](file://TraceTree/monitor/timeline.py#L334-L352)
+- [signatures.py:474-487](file://monitor/signatures.py#L474-L487)
+- [timeline.py:334-352](file://monitor/timeline.py#L334-L352)
 
 ### Appendix C: Network Destination Categories and Risk Scores
 - Categories:
@@ -475,4 +475,4 @@ The cascade-analyze output presents a comprehensive, interpretable view of runti
   - unknown: 3.0
 
 **Section sources**
-- [parser.py:250-316](file://TraceTree/monitor/parser.py#L250-L316)
+- [parser.py:250-316](file://monitor/parser.py#L250-L316)

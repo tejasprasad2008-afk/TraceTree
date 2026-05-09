@@ -61,7 +61,7 @@ Configuration for AI behavior when interacting with Codacy's MCP Server
 - Complexity metrics are different from complexity issues. When trying to fix complexity in a repository or file, focus on solving the complexity issues and ignore the complexity metric.
 - Do not run `codacy_cli_analyze` looking for changes in code coverage.
 - Do not try to manually install Codacy CLI using either brew, npm, npx, or any other package manager.
-- If the Codacy CLI is not installed, just run the `codacy_cli_analyze` tool from Codacy's MCP Server.
+- If the Codacy CLI is not installed, you MUST ask the user to install it via `codacy_cli_install` before proceeding.
 - When calling `codacy_cli_analyze`, only send provider, organization and repository if the project is a git repository.
 
 ## Whenever a call to a Codacy tool that uses `repository` or `organization` as a parameter returns a 404 error

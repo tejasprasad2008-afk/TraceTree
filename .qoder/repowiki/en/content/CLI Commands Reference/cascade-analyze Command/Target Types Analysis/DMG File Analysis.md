@@ -2,10 +2,10 @@
 
 <cite>
 **Referenced Files in This Document**
-- [cli.py](file://TraceTree/cli.py)
-- [sandbox.py](file://TraceTree/sandbox/sandbox.py)
-- [parser.py](file://TraceTree/monitor/parser.py)
-- [Dockerfile](file://TraceTree/sandbox/Dockerfile)
+- [cli.py](file://cli.py)
+- [sandbox.py](file://sandbox/sandbox.py)
+- [parser.py](file://monitor/parser.py)
+- [Dockerfile](file://sandbox/Dockerfile)
 - [README.md](file://README.md)
 </cite>
 
@@ -41,16 +41,16 @@ Parser --> Output["Analysis Results"]
 ```
 
 **Diagram sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [Dockerfile:1-11](file://TraceTree/sandbox/Dockerfile#L1-L11)
+- [cli.py:110-124](file://cli.py#L110-L124)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [Dockerfile:1-11](file://sandbox/Dockerfile#L1-L11)
 
 **Section sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [Dockerfile:1-11](file://TraceTree/sandbox/Dockerfile#L1-L11)
+- [cli.py:110-124](file://cli.py#L110-L124)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [Dockerfile:1-11](file://sandbox/Dockerfile#L1-L11)
 
 ## Core Components
 - Automatic target type detection for .dmg files in the CLI.
@@ -60,9 +60,9 @@ Parser --> Output["Analysis Results"]
 - Strace log parsing tailored to DMG analysis and macOS-specific syscalls.
 
 **Section sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
+- [cli.py:110-124](file://cli.py#L110-L124)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
 
 ## Architecture Overview
 The DMG analysis architecture follows a deterministic flow: CLI decides target type, sandbox container runs extraction and tracing, and the parser interprets the resulting strace logs.
@@ -87,9 +87,9 @@ CLI-->>User : "analysis report"
 ```
 
 **Diagram sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
+- [cli.py:110-124](file://cli.py#L110-L124)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
 
 ## Detailed Component Analysis
 
@@ -114,10 +114,10 @@ NextCheck2 --> Default["Default to 'pip'"]
 ```
 
 **Diagram sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
+- [cli.py:110-124](file://cli.py#L110-L124)
 
 **Section sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
+- [cli.py:110-124](file://cli.py#L110-L124)
 
 ### Specialized Sandbox Execution Parameters for DMG
 The sandbox prepares a Docker container with:
@@ -144,12 +144,12 @@ Sandbox-->>Docker : "capture strace log"
 ```
 
 **Diagram sources**
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [Dockerfile:1-11](file://TraceTree/sandbox/Dockerfile#L1-L11)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [Dockerfile:1-11](file://sandbox/Dockerfile#L1-L11)
 
 **Section sources**
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [Dockerfile:1-11](file://TraceTree/sandbox/Dockerfile#L1-L11)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [Dockerfile:1-11](file://sandbox/Dockerfile#L1-L11)
 
 ### DMG Extraction and Executable Discovery
 The DMG analysis script performs:
@@ -182,10 +182,10 @@ WriteEmpty --> Done
 ```
 
 **Diagram sources**
-- [sandbox.py:20-112](file://TraceTree/sandbox/sandbox.py#L20-L112)
+- [sandbox.py:20-112](file://sandbox/sandbox.py#L20-L112)
 
 **Section sources**
-- [sandbox.py:20-112](file://TraceTree/sandbox/sandbox.py#L20-L112)
+- [sandbox.py:20-112](file://sandbox/sandbox.py#L20-L112)
 
 ### Binary Analysis Within the Mounted Filesystem
 For each discovered executable:
@@ -208,10 +208,10 @@ Capture --> Next["Next candidate"]
 ```
 
 **Diagram sources**
-- [sandbox.py:77-104](file://TraceTree/sandbox/sandbox.py#L77-L104)
+- [sandbox.py:77-104](file://sandbox/sandbox.py#L77-L104)
 
 **Section sources**
-- [sandbox.py:77-104](file://TraceTree/sandbox/sandbox.py#L77-L104)
+- [sandbox.py:77-104](file://sandbox/sandbox.py#L77-L104)
 
 ### Strace Log Parsing Differences for DMG Analysis
 The parser handles multi-line strace entries, both [pid] and bare-pid formats, and timestamped logs. For DMG analysis, the parser focuses on:
@@ -239,12 +239,12 @@ Chains --> Output(["Structured output with flags and severity"])
 ```
 
 **Diagram sources**
-- [parser.py:169-224](file://TraceTree/monitor/parser.py#L169-L224)
-- [parser.py:226-680](file://TraceTree/monitor/parser.py#L226-L680)
+- [parser.py:169-224](file://monitor/parser.py#L169-L224)
+- [parser.py:226-680](file://monitor/parser.py#L226-L680)
 
 **Section sources**
-- [parser.py:169-224](file://TraceTree/monitor/parser.py#L169-L224)
-- [parser.py:226-680](file://TraceTree/monitor/parser.py#L226-L680)
+- [parser.py:169-224](file://monitor/parser.py#L169-L224)
+- [parser.py:226-680](file://monitor/parser.py#L226-L680)
 
 ### Practical Examples for DMG Analysis
 Examples of analyzing macOS applications, system utilities, and third-party software distributed as DMG files:
@@ -255,8 +255,8 @@ Examples of analyzing macOS applications, system utilities, and third-party soft
 These examples rely on the sandbox’s DMG extraction and executable discovery logic, and the parser’s severity-weighted scoring and signature matching.
 
 **Section sources**
-- [sandbox.py:20-112](file://TraceTree/sandbox/sandbox.py#L20-L112)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
+- [sandbox.py:20-112](file://sandbox/sandbox.py#L20-L112)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
 
 ### Security Considerations and Sandbox Isolation
 Security measures for DMG analysis include:
@@ -267,7 +267,7 @@ Security measures for DMG analysis include:
 - Robust error handling: The sandbox checks container exit codes and logs stderr for diagnostics.
 
 **Section sources**
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
 
 ## Dependency Analysis
 The DMG analysis pipeline depends on:
@@ -285,16 +285,16 @@ Parser --> Output["Results"]
 ```
 
 **Diagram sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [Dockerfile:1-11](file://TraceTree/sandbox/Dockerfile#L1-L11)
+- [cli.py:110-124](file://cli.py#L110-L124)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [Dockerfile:1-11](file://sandbox/Dockerfile#L1-L11)
 
 **Section sources**
-- [cli.py:110-124](file://TraceTree/cli.py#L110-L124)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [Dockerfile:1-11](file://TraceTree/sandbox/Dockerfile#L1-L11)
+- [cli.py:110-124](file://cli.py#L110-L124)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [Dockerfile:1-11](file://sandbox/Dockerfile#L1-L11)
 
 ## Performance Considerations
 - Extraction speed: 7z extraction performance depends on DMG compression and size.
@@ -313,9 +313,9 @@ Common issues and resolutions:
 - Parser failures: The CLI catches exceptions during parsing and returns empty results.
 
 **Section sources**
-- [sandbox.py:230-246](file://TraceTree/sandbox/sandbox.py#L230-L246)
-- [sandbox.py:274-281](file://TraceTree/sandbox/sandbox.py#L274-L281)
-- [cli.py:214-216](file://TraceTree/cli.py#L214-L216)
+- [sandbox.py:230-246](file://sandbox/sandbox.py#L230-L246)
+- [sandbox.py:274-281](file://sandbox/sandbox.py#L274-L281)
+- [cli.py:214-216](file://cli.py#L214-L216)
 
 ## Conclusion
 The DMG analysis pipeline provides a robust, automated approach to extracting and tracing executables from macOS DMG images. By leveraging Docker-based sandboxing, strace tracing, and a severity-weighted parser, it identifies suspicious behavior patterns and delivers actionable insights. While DMG analysis is limited by the Linux execution environment and the reliance on 7z extraction, it remains a practical solution for analyzing macOS applications, system utilities, and third-party software distributed as DMG files.

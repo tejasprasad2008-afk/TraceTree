@@ -2,17 +2,17 @@
 
 <cite>
 **Referenced Files in This Document**
-- [parser.py](file://TraceTree/monitor/parser.py)
-- [signatures.py](file://TraceTree/monitor/signatures.py)
-- [timeline.py](file://TraceTree/monitor/timeline.py)
-- [detector.py](file://TraceTree/ml/detector.py)
-- [builder.py](file://TraceTree/graph/builder.py)
-- [cli.py](file://TraceTree/cli.py)
-- [sandbox.py](file://TraceTree/sandbox/sandbox.py)
-- [session.py](file://TraceTree/watcher/session.py)
-- [spider.py](file://TraceTree/mascot/spider.py)
+- [parser.py](file://monitor/parser.py)
+- [signatures.py](file://monitor/signatures.py)
+- [timeline.py](file://monitor/timeline.py)
+- [detector.py](file://ml/detector.py)
+- [builder.py](file://graph/builder.py)
+- [cli.py](file://cli.py)
+- [sandbox.py](file://sandbox/sandbox.py)
+- [session.py](file://watcher/session.py)
+- [spider.py](file://mascot/spider.py)
 - [signatures.json](file://data/signatures.json)
-- [README.md](file://TraceTree/README.md)
+- [README.md](file://README.md)
 </cite>
 
 ## Table of Contents
@@ -90,19 +90,19 @@ SJ -.-> SG
 ```
 
 **Diagram sources**
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [signatures.py:57-115](file://TraceTree/monitor/signatures.py#L57-L115)
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:29-300](file://TraceTree/ml/detector.py#L29-L300)
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [session.py:29-417](file://TraceTree/watcher/session.py#L29-L417)
-- [spider.py:1-77](file://TraceTree/mascot/spider.py#L1-L77)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [signatures.py:57-115](file://monitor/signatures.py#L57-L115)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:29-300](file://ml/detector.py#L29-L300)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [session.py:29-417](file://watcher/session.py#L29-L417)
+- [spider.py:1-77](file://mascot/spider.py#L1-L77)
 - [signatures.json:1-246](file://data/signatures.json#L1-L246)
 
 **Section sources**
-- [README.md:306-329](file://TraceTree/README.md#L306-L329)
+- [README.md:306-329](file://README.md#L306-L329)
 
 ## Core Components
 - Strace parser: Reassembles multi-line syscalls, extracts timestamps, assigns severity, classifies destinations, and flags suspicious events.
@@ -114,14 +114,14 @@ SJ -.-> SG
 - CLI and watcher: Orchestrate the pipeline, display results, and continuously monitor repositories.
 
 **Section sources**
-- [parser.py:11-680](file://TraceTree/monitor/parser.py#L11-L680)
-- [signatures.py:57-487](file://TraceTree/monitor/signatures.py#L57-L487)
-- [timeline.py:298-353](file://TraceTree/monitor/timeline.py#L298-L353)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:29-300](file://TraceTree/ml/detector.py#L29-L300)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [session.py:29-417](file://TraceTree/watcher/session.py#L29-L417)
+- [parser.py:11-680](file://monitor/parser.py#L11-L680)
+- [signatures.py:57-487](file://monitor/signatures.py#L57-L487)
+- [timeline.py:298-353](file://monitor/timeline.py#L298-L353)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:29-300](file://ml/detector.py#L29-L300)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [session.py:29-417](file://watcher/session.py#L29-L417)
 
 ## Architecture Overview
 The pipeline transforms raw strace logs into actionable insights:
@@ -157,13 +157,13 @@ CLI-->>User : Final verdict + evidence
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
 
 ## Detailed Component Analysis
 
@@ -216,11 +216,11 @@ NextLine --> Done(["Return parsed_data"])
 ```
 
 **Diagram sources**
-- [parser.py:169-223](file://TraceTree/monitor/parser.py#L169-L223)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
+- [parser.py:169-223](file://monitor/parser.py#L169-L223)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
 
 **Section sources**
-- [parser.py:11-680](file://TraceTree/monitor/parser.py#L11-L680)
+- [parser.py:11-680](file://monitor/parser.py#L11-L680)
 
 ### Behavioral Signature Matching Engine
 The engine:
@@ -248,15 +248,15 @@ Sort --> Return(["Return matches"])
 ```
 
 **Diagram sources**
-- [signatures.py:57-115](file://TraceTree/monitor/signatures.py#L57-L115)
-- [signatures.py:123-236](file://TraceTree/monitor/signatures.py#L123-L236)
-- [signatures.py:244-343](file://TraceTree/monitor/signatures.py#L244-L343)
-- [signatures.py:351-448](file://TraceTree/monitor/signatures.py#L351-L448)
-- [signatures.py:474-487](file://TraceTree/monitor/signatures.py#L474-L487)
+- [signatures.py:57-115](file://monitor/signatures.py#L57-L115)
+- [signatures.py:123-236](file://monitor/signatures.py#L123-L236)
+- [signatures.py:244-343](file://monitor/signatures.py#L244-L343)
+- [signatures.py:351-448](file://monitor/signatures.py#L351-L448)
+- [signatures.py:474-487](file://monitor/signatures.py#L474-L487)
 - [signatures.json:1-246](file://data/signatures.json#L1-L246)
 
 **Section sources**
-- [signatures.py:57-487](file://TraceTree/monitor/signatures.py#L57-L487)
+- [signatures.py:57-487](file://monitor/signatures.py#L57-L487)
 - [signatures.json:1-246](file://data/signatures.json#L1-L246)
 
 ### Temporal Analysis System
@@ -284,15 +284,15 @@ SortFinal --> Return(["Return patterns"])
 ```
 
 **Diagram sources**
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [timeline.py:100-131](file://TraceTree/monitor/timeline.py#L100-L131)
-- [timeline.py:172-206](file://TraceTree/monitor/timeline.py#L172-L206)
-- [timeline.py:209-250](file://TraceTree/monitor/timeline.py#L209-L250)
-- [timeline.py:134-169](file://TraceTree/monitor/timeline.py#L134-L169)
-- [timeline.py:253-281](file://TraceTree/monitor/timeline.py#L253-L281)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [timeline.py:100-131](file://monitor/timeline.py#L100-L131)
+- [timeline.py:172-206](file://monitor/timeline.py#L172-L206)
+- [timeline.py:209-250](file://monitor/timeline.py#L209-L250)
+- [timeline.py:134-169](file://monitor/timeline.py#L134-L169)
+- [timeline.py:253-281](file://monitor/timeline.py#L253-L281)
 
 **Section sources**
-- [timeline.py:298-353](file://TraceTree/monitor/timeline.py#L298-L353)
+- [timeline.py:298-353](file://monitor/timeline.py#L298-L353)
 
 ### Graph Construction and Statistics
 The graph builder:
@@ -312,10 +312,10 @@ Stats --> Return(["Return nodes, edges, stats"])
 ```
 
 **Diagram sources**
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
 
 **Section sources**
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
 
 ### Machine Learning Detection and Confidence Boosting
 The ML detector:
@@ -338,11 +338,11 @@ Cap --> Return(["Return is_malicious, confidence"])
 ```
 
 **Diagram sources**
-- [detector.py:29-300](file://TraceTree/ml/detector.py#L29-L300)
-- [detector.py:180-232](file://TraceTree/ml/detector.py#L180-L232)
+- [detector.py:29-300](file://ml/detector.py#L29-L300)
+- [detector.py:180-232](file://ml/detector.py#L180-L232)
 
 **Section sources**
-- [detector.py:29-300](file://TraceTree/ml/detector.py#L29-L300)
+- [detector.py:29-300](file://ml/detector.py#L29-L300)
 
 ### Sandbox and Orchestration
 The sandbox:
@@ -373,17 +373,17 @@ DT-->>CLI : is_malicious, confidence
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
 
 **Section sources**
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [session.py:29-417](file://TraceTree/watcher/session.py#L29-L417)
-- [spider.py:1-77](file://TraceTree/mascot/spider.py#L1-L77)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [session.py:29-417](file://watcher/session.py#L29-L417)
+- [spider.py:1-77](file://mascot/spider.py#L1-L77)
 
 ## Dependency Analysis
 - Parser depends on regex patterns and severity maps; it is the foundation for all downstream components.
@@ -413,18 +413,18 @@ WK --> DT
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [session.py:29-417](file://TraceTree/watcher/session.py#L29-L417)
-- [parser.py:340-680](file://TraceTree/monitor/parser.py#L340-L680)
-- [signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [builder.py:8-195](file://TraceTree/graph/builder.py#L8-L195)
-- [detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
-- [sandbox.py:175-335](file://TraceTree/sandbox/sandbox.py#L175-L335)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [session.py:29-417](file://watcher/session.py#L29-L417)
+- [parser.py:340-680](file://monitor/parser.py#L340-L680)
+- [signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [builder.py:8-195](file://graph/builder.py#L8-L195)
+- [detector.py:235-299](file://ml/detector.py#L235-L299)
+- [sandbox.py:175-335](file://sandbox/sandbox.py#L175-L335)
 
 **Section sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [session.py:29-417](file://TraceTree/watcher/session.py#L29-L417)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [session.py:29-417](file://watcher/session.py#L29-L417)
 
 ## Performance Considerations
 - Parsing efficiency
@@ -461,11 +461,11 @@ Common issues and remedies:
   - Session locks prevent multiple watchers for the same directory; stale locks are cleaned up automatically.
 
 **Section sources**
-- [sandbox.py:189-197](file://TraceTree/sandbox/sandbox.py#L189-L197)
-- [sandbox.py:322-335](file://TraceTree/sandbox/sandbox.py#L322-L335)
-- [signatures.py:74-83](file://TraceTree/monitor/signatures.py#L74-L83)
-- [detector.py:108-146](file://TraceTree/ml/detector.py#L108-L146)
-- [session.py:637-648](file://TraceTree/watcher/session.py#L637-L648)
+- [sandbox.py:189-197](file://sandbox/sandbox.py#L189-L197)
+- [sandbox.py:322-335](file://sandbox/sandbox.py#L322-L335)
+- [signatures.py:74-83](file://monitor/signatures.py#L74-L83)
+- [detector.py:108-146](file://ml/detector.py#L108-L146)
+- [session.py:637-648](file://watcher/session.py#L637-L648)
 
 ## Conclusion
 TraceTree’s event processing pipeline integrates robust strace parsing, behavioral signature matching, temporal analysis, and ML-based anomaly detection. The modular design enables efficient scaling, clear separation of concerns, and extensible pattern definition. By leveraging severity weighting, destination classification, and time-based pattern detection, the system provides actionable insights for runtime behavioral analysis across diverse target types.
@@ -483,8 +483,8 @@ TraceTree’s event processing pipeline integrates robust strace parsing, behavi
   - Use the watcher to continuously monitor a repository and run analyses in the background.
 
 **Section sources**
-- [cli.py:261-371](file://TraceTree/cli.py#L261-L371)
-- [session.py:128-196](file://TraceTree/watcher/session.py#L128-L196)
+- [cli.py:261-371](file://cli.py#L261-L371)
+- [session.py:128-196](file://watcher/session.py#L128-L196)
 
 ### Custom Signature Creation
 Steps to define a new behavioral signature:
@@ -500,7 +500,7 @@ Validation tips:
 
 **Section sources**
 - [signatures.json:1-246](file://data/signatures.json#L1-L246)
-- [signatures.py:57-115](file://TraceTree/monitor/signatures.py#L57-L115)
+- [signatures.py:57-115](file://monitor/signatures.py#L57-L115)
 
 ### Performance Optimization Techniques
 - Prefer ordered sequences for high-confidence, low false-positive matching
@@ -510,6 +510,6 @@ Validation tips:
 - Filter noise in EXE traces to reduce log size
 
 **Section sources**
-- [timeline.py:1-353](file://TraceTree/monitor/timeline.py#L1-L353)
-- [detector.py:17-21](file://TraceTree/ml/detector.py#L17-L21)
-- [sandbox.py:338-375](file://TraceTree/sandbox/sandbox.py#L338-L375)
+- [timeline.py:1-353](file://monitor/timeline.py#L1-L353)
+- [detector.py:17-21](file://ml/detector.py#L17-L21)
+- [sandbox.py:338-375](file://sandbox/sandbox.py#L338-L375)

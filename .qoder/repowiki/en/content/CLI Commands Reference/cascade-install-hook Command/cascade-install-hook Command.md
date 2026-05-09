@@ -3,11 +3,11 @@
 <cite>
 **Referenced Files in This Document**
 - [README.md](file://README.md)
-- [cli.py](file://TraceTree/cli.py)
-- [pyproject.toml](file://TraceTree/pyproject.toml)
-- [install_hook.py](file://TraceTree/hooks/install_hook.py)
-- [install_hook.sh](file://TraceTree/hooks/install_hook.sh)
-- [shell_hook.sh](file://TraceTree/hooks/shell_hook.sh)
+- [cli.py](file://cli.py)
+- [pyproject.toml](file://pyproject.toml)
+- [install_hook.py](file://hooks/install_hook.py)
+- [install_hook.sh](file://hooks/install_hook.sh)
+- [shell_hook.sh](file://hooks/shell_hook.sh)
 </cite>
 
 ## Table of Contents
@@ -41,16 +41,16 @@ GitClone --> Watcher["cascade-watch Background Process"]
 ```
 
 **Diagram sources**
-- [cli.py:937-1009](file://TraceTree/cli.py#L937-L1009)
-- [pyproject.toml:26-32](file://TraceTree/pyproject.toml#L26-L32)
-- [install_hook.py:71-119](file://TraceTree/hooks/install_hook.py#L71-L119)
-- [install_hook.sh:1-59](file://TraceTree/hooks/install_hook.sh#L1-L59)
-- [shell_hook.sh:1-93](file://TraceTree/hooks/shell_hook.sh#L1-L93)
+- [cli.py:937-1009](file://cli.py#L937-L1009)
+- [pyproject.toml:26-32](file://pyproject.toml#L26-L32)
+- [install_hook.py:71-119](file://hooks/install_hook.py#L71-L119)
+- [install_hook.sh:1-59](file://hooks/install_hook.sh#L1-L59)
+- [shell_hook.sh:1-93](file://hooks/shell_hook.sh#L1-L93)
 
 **Section sources**
 - [README.md:232-241](file://README.md#L232-L241)
-- [cli.py:937-1009](file://TraceTree/cli.py#L937-L1009)
-- [pyproject.toml:26-32](file://TraceTree/pyproject.toml#L26-L32)
+- [cli.py:937-1009](file://cli.py#L937-L1009)
+- [pyproject.toml:26-32](file://pyproject.toml#L26-L32)
 
 ## Core Components
 - cascade-install-hook command: A CLI subcommand that installs the shell hook.
@@ -65,10 +65,10 @@ Key behaviors:
 - Only intercepts git clone; other git commands pass through unchanged.
 
 **Section sources**
-- [cli.py:937-1009](file://TraceTree/cli.py#L937-L1009)
-- [install_hook.py:29-59](file://TraceTree/hooks/install_hook.py#L29-L59)
-- [install_hook.sh:10-27](file://TraceTree/hooks/install_hook.sh#L10-L27)
-- [shell_hook.sh:27-88](file://TraceTree/hooks/shell_hook.sh#L27-L88)
+- [cli.py:937-1009](file://cli.py#L937-L1009)
+- [install_hook.py:29-59](file://hooks/install_hook.py#L29-L59)
+- [install_hook.sh:10-27](file://hooks/install_hook.sh#L10-L27)
+- [shell_hook.sh:27-88](file://hooks/shell_hook.sh#L27-L88)
 
 ## Architecture Overview
 The cascade-install-hook command orchestrates installation of a shell integration that augments the user’s interactive shell. When the user runs git clone, the wrapper function intercepts the command, clones the repository, and launches the session guardian in the background.
@@ -89,7 +89,7 @@ Watch-->>User : Log to "/tmp/tracetree_<dir>.log"
 ```
 
 **Diagram sources**
-- [shell_hook.sh:27-88](file://TraceTree/hooks/shell_hook.sh#L27-L88)
+- [shell_hook.sh:27-88](file://hooks/shell_hook.sh#L27-L88)
 - [README.md:232-241](file://README.md#L232-L241)
 
 ## Detailed Component Analysis
@@ -108,12 +108,12 @@ Append --> Done(["Installation complete"])
 ```
 
 **Diagram sources**
-- [cli.py:937-1009](file://TraceTree/cli.py#L937-L1009)
-- [install_hook.py:71-119](file://TraceTree/hooks/install_hook.py#L71-L119)
+- [cli.py:937-1009](file://cli.py#L937-L1009)
+- [install_hook.py:71-119](file://hooks/install_hook.py#L71-L119)
 
 **Section sources**
-- [cli.py:937-1009](file://TraceTree/cli.py#L937-L1009)
-- [pyproject.toml:32-32](file://TraceTree/pyproject.toml#L32-L32)
+- [cli.py:937-1009](file://cli.py#L937-L1009)
+- [pyproject.toml:32-32](file://pyproject.toml#L32-L32)
 
 ### Python Installer (install_hook.py)
 Responsibilities:
@@ -129,8 +129,8 @@ Behavioral notes:
 - Prints helpful messages and exits with non-zero status on failure.
 
 **Section sources**
-- [install_hook.py:29-59](file://TraceTree/hooks/install_hook.py#L29-L59)
-- [install_hook.py:71-119](file://TraceTree/hooks/install_hook.py#L71-L119)
+- [install_hook.py:29-59](file://hooks/install_hook.py#L29-L59)
+- [install_hook.py:71-119](file://hooks/install_hook.py#L71-L119)
 
 ### Bash Installer (install_hook.sh)
 Responsibilities:
@@ -141,7 +141,7 @@ Responsibilities:
 - Append the source line and marker to the RC file.
 
 **Section sources**
-- [install_hook.sh:10-59](file://TraceTree/hooks/install_hook.sh#L10-L59)
+- [install_hook.sh:10-59](file://hooks/install_hook.sh#L10-L59)
 
 ### Shell Hook (shell_hook.sh)
 Responsibilities:
@@ -158,7 +158,7 @@ Interception logic:
 - Starts cascade-watch with nohup and redirects output to a temporary log file.
 
 **Section sources**
-- [shell_hook.sh:7-89](file://TraceTree/hooks/shell_hook.sh#L7-L89)
+- [shell_hook.sh:7-89](file://hooks/shell_hook.sh#L7-L89)
 
 ## Dependency Analysis
 The cascade-install-hook command depends on:
@@ -175,14 +175,14 @@ Hook --> Watch["cascade-watch"]
 ```
 
 **Diagram sources**
-- [pyproject.toml:26-32](file://TraceTree/pyproject.toml#L26-L32)
-- [cli.py:937-1009](file://TraceTree/cli.py#L937-L1009)
-- [install_hook.py:71-119](file://TraceTree/hooks/install_hook.py#L71-L119)
-- [shell_hook.sh:22-24](file://TraceTree/hooks/shell_hook.sh#L22-L24)
+- [pyproject.toml:26-32](file://pyproject.toml#L26-L32)
+- [cli.py:937-1009](file://cli.py#L937-L1009)
+- [install_hook.py:71-119](file://hooks/install_hook.py#L71-L119)
+- [shell_hook.sh:22-24](file://hooks/shell_hook.sh#L22-L24)
 
 **Section sources**
-- [pyproject.toml:26-32](file://TraceTree/pyproject.toml#L26-L32)
-- [cli.py:937-1009](file://TraceTree/cli.py#L937-L1009)
+- [pyproject.toml:26-32](file://pyproject.toml#L26-L32)
+- [cli.py:937-1009](file://cli.py#L937-L1009)
 
 ## Performance Considerations
 - The shell hook introduces minimal overhead: a single function wrapper around git and a background process startup.
@@ -210,9 +210,9 @@ Operational checks:
 - Test that git clone triggers cascade-watch by checking the log file in /tmp.
 
 **Section sources**
-- [install_hook.py:80-90](file://TraceTree/hooks/install_hook.py#L80-L90)
-- [install_hook.sh:32-36](file://TraceTree/hooks/install_hook.sh#L32-L36)
-- [shell_hook.sh:22-24](file://TraceTree/hooks/shell_hook.sh#L22-L24)
+- [install_hook.py:80-90](file://hooks/install_hook.py#L80-L90)
+- [install_hook.sh:32-36](file://hooks/install_hook.sh#L32-L36)
+- [shell_hook.sh:22-24](file://hooks/shell_hook.sh#L22-L24)
 
 ## Conclusion
 The cascade-install-hook command provides a seamless way to enable automatic repository monitoring by integrating with the user’s shell. Once installed, every git clone operation triggers the session guardian, allowing continuous observation of newly cloned repositories. The implementation is robust across bash and zsh, with clear installation and troubleshooting procedures.
@@ -248,4 +248,4 @@ The cascade-install-hook command provides a seamless way to enable automatic rep
 
 **Section sources**
 - [README.md:232-241](file://README.md#L232-L241)
-- [shell_hook.sh:67-78](file://TraceTree/hooks/shell_hook.sh#L67-L78)
+- [shell_hook.sh:67-78](file://hooks/shell_hook.sh#L67-L78)

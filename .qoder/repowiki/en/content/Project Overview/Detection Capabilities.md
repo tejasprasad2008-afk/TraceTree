@@ -2,15 +2,15 @@
 
 <cite>
 **Referenced Files in This Document**
-- [cli.py](file://TraceTree/cli.py)
-- [monitor/parser.py](file://TraceTree/monitor/parser.py)
-- [monitor/signatures.py](file://TraceTree/monitor/signatures.py)
-- [monitor/timeline.py](file://TraceTree/monitor/timeline.py)
-- [graph/builder.py](file://TraceTree/graph/builder.py)
-- [ml/detector.py](file://TraceTree/ml/detector.py)
-- [ml/trainer.py](file://TraceTree/ml/trainer.py)
-- [data/signatures.json](file://TraceTree/data/signatures.json)
-- [README.md](file://TraceTree/README.md)
+- [cli.py](file://cli.py)
+- [monitor/parser.py](file://monitor/parser.py)
+- [monitor/signatures.py](file://monitor/signatures.py)
+- [monitor/timeline.py](file://monitor/timeline.py)
+- [graph/builder.py](file://graph/builder.py)
+- [ml/detector.py](file://ml/detector.py)
+- [ml/trainer.py](file://ml/trainer.py)
+- [data/signatures.json](file://data/signatures.json)
+- [README.md](file://README.md)
 </cite>
 
 ## Table of Contents
@@ -50,16 +50,16 @@ ML --> Output["Final verdict + confidence"]
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [monitor/parser.py:340-679](file://TraceTree/monitor/parser.py#L340-L679)
-- [monitor/signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [monitor/timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [graph/builder.py:8-31](file://TraceTree/graph/builder.py#L8-L31)
-- [ml/detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [monitor/parser.py:340-679](file://monitor/parser.py#L340-L679)
+- [monitor/signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [monitor/timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [graph/builder.py:8-31](file://graph/builder.py#L8-L31)
+- [ml/detector.py:235-299](file://ml/detector.py#L235-L299)
 
 **Section sources**
-- [README.md:9-42](file://TraceTree/README.md#L9-L42)
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
+- [README.md:9-42](file://README.md#L9-L42)
+- [cli.py:181-259](file://cli.py#L181-L259)
 
 ## Core Components
 - Behavioral signatures: Eight patterns defined in JSON, matched against parsed strace events with evidence collection.
@@ -67,9 +67,9 @@ ML --> Output["Final verdict + confidence"]
 - Machine learning: Severity-weighted features fed to a Random Forest model with Isolation Forest fallback; severity and temporal counts boost confidence.
 
 **Section sources**
-- [data/signatures.json:1-246](file://TraceTree/data/signatures.json#L1-L246)
-- [monitor/timeline.py:288-295](file://TraceTree/monitor/timeline.py#L288-L295)
-- [ml/detector.py:29-68](file://TraceTree/ml/detector.py#L29-L68)
+- [data/signatures.json:1-246](file://data/signatures.json#L1-L246)
+- [monitor/timeline.py:288-295](file://monitor/timeline.py#L288-L295)
+- [ml/detector.py:29-68](file://ml/detector.py#L29-L68)
 
 ## Architecture Overview
 The detection pipeline integrates rule-based and ML-based signals:
@@ -104,12 +104,12 @@ CLI-->>User : Final verdict + confidence + evidence
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [monitor/parser.py:340-679](file://TraceTree/monitor/parser.py#L340-L679)
-- [monitor/signatures.py:57-83](file://TraceTree/monitor/signatures.py#L57-L83)
-- [monitor/timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [graph/builder.py:8-31](file://TraceTree/graph/builder.py#L8-L31)
-- [ml/detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [monitor/parser.py:340-679](file://monitor/parser.py#L340-L679)
+- [monitor/signatures.py:57-83](file://monitor/signatures.py#L57-L83)
+- [monitor/timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [graph/builder.py:8-31](file://graph/builder.py#L8-L31)
+- [ml/detector.py:235-299](file://ml/detector.py#L235-L299)
 
 ## Detailed Component Analysis
 
@@ -143,14 +143,14 @@ Examples of each detection type with actual trace evidence and confidence scores
 - persistence_cron (severity 7): openat crontab path → write; severity from sensitive path and write operation.
 
 **Section sources**
-- [data/signatures.json:1-246](file://TraceTree/data/signatures.json#L1-L246)
-- [monitor/signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [monitor/signatures.py:143-194](file://TraceTree/monitor/signatures.py#L143-L194)
-- [monitor/signatures.py:196-236](file://TraceTree/monitor/signatures.py#L196-L236)
-- [monitor/signatures.py:244-343](file://TraceTree/monitor/signatures.py#L244-L343)
-- [monitor/signatures.py:351-376](file://TraceTree/monitor/signatures.py#L351-L376)
-- [monitor/signatures.py:384-448](file://TraceTree/monitor/signatures.py#L384-L448)
-- [monitor/signatures.py:474-487](file://TraceTree/monitor/signatures.py#L474-L487)
+- [data/signatures.json:1-246](file://data/signatures.json#L1-L246)
+- [monitor/signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [monitor/signatures.py:143-194](file://monitor/signatures.py#L143-L194)
+- [monitor/signatures.py:196-236](file://monitor/signatures.py#L196-L236)
+- [monitor/signatures.py:244-343](file://monitor/signatures.py#L244-L343)
+- [monitor/signatures.py:351-376](file://monitor/signatures.py#L351-L376)
+- [monitor/signatures.py:384-448](file://monitor/signatures.py#L384-L448)
+- [monitor/signatures.py:474-487](file://monitor/signatures.py#L474-L487)
 
 ### Temporal Patterns (Five Patterns)
 The system detects five time-based behavioral patterns from the timestamped event stream:
@@ -173,12 +173,12 @@ Examples of each detection type with actual trace evidence and confidence scores
 - burst_process_spawn: sliding window of 2s capturing ≥5 process spawns; confidence boosted by temporal pattern count.
 
 **Section sources**
-- [monitor/timeline.py:288-295](file://TraceTree/monitor/timeline.py#L288-L295)
-- [monitor/timeline.py:100-131](file://TraceTree/monitor/timeline.py#L100-L131)
-- [monitor/timeline.py:134-169](file://TraceTree/monitor/timeline.py#L134-L169)
-- [monitor/timeline.py:172-206](file://TraceTree/monitor/timeline.py#L172-L206)
-- [monitor/timeline.py:209-250](file://TraceTree/monitor/timeline.py#L209-L250)
-- [monitor/timeline.py:253-281](file://TraceTree/monitor/timeline.py#L253-L281)
+- [monitor/timeline.py:288-295](file://monitor/timeline.py#L288-L295)
+- [monitor/timeline.py:100-131](file://monitor/timeline.py#L100-L131)
+- [monitor/timeline.py:134-169](file://monitor/timeline.py#L134-L169)
+- [monitor/timeline.py:172-206](file://monitor/timeline.py#L172-L206)
+- [monitor/timeline.py:209-250](file://monitor/timeline.py#L209-L250)
+- [monitor/timeline.py:253-281](file://monitor/timeline.py#L253-L281)
 
 ### Severity-Weighted Syscall Scoring and Network Destination Classification
 Severity-weighted syscall scoring:
@@ -200,9 +200,9 @@ Network destination classification:
 These scores feed into the ML detector and boost confidence.
 
 **Section sources**
-- [monitor/parser.py:11-45](file://TraceTree/monitor/parser.py#L11-L45)
-- [monitor/parser.py:250-316](file://TraceTree/monitor/parser.py#L250-L316)
-- [graph/builder.py:173-188](file://TraceTree/graph/builder.py#L173-L188)
+- [monitor/parser.py:11-45](file://monitor/parser.py#L11-L45)
+- [monitor/parser.py:250-316](file://monitor/parser.py#L250-L316)
+- [graph/builder.py:173-188](file://graph/builder.py#L173-L188)
 
 ### Machine Learning Detection Pipeline (Random Forest and Isolation Forest)
 Feature extraction:
@@ -228,12 +228,12 @@ Training pipeline:
 - The trainer loads local datasets of malicious and clean packages, executes them in the sandbox, parses strace logs, builds graphs, extracts features, trains a Random Forest, saves the model, and uploads it to GCS.
 
 **Section sources**
-- [ml/detector.py:29-68](file://TraceTree/ml/detector.py#L29-L68)
-- [ml/detector.py:77-89](file://TraceTree/ml/detector.py#L77-L89)
-- [ml/detector.py:108-146](file://TraceTree/ml/detector.py#L108-L146)
-- [ml/detector.py:170-232](file://TraceTree/ml/detector.py#L170-L232)
-- [ml/detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
-- [ml/trainer.py:15-99](file://TraceTree/ml/trainer.py#L15-L99)
+- [ml/detector.py:29-68](file://ml/detector.py#L29-L68)
+- [ml/detector.py:77-89](file://ml/detector.py#L77-L89)
+- [ml/detector.py:108-146](file://ml/detector.py#L108-L146)
+- [ml/detector.py:170-232](file://ml/detector.py#L170-L232)
+- [ml/detector.py:235-299](file://ml/detector.py#L235-L299)
+- [ml/trainer.py:15-99](file://ml/trainer.py#L15-L99)
 
 ### Combining Rule-Based Detection with ML Confidence Scoring
 The system integrates rule-based and ML signals:
@@ -254,12 +254,12 @@ Cap --> End(["Final verdict + confidence"])
 ```
 
 **Diagram sources**
-- [ml/detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
-- [ml/detector.py:170-232](file://TraceTree/ml/detector.py#L170-L232)
+- [ml/detector.py:235-299](file://ml/detector.py#L235-L299)
+- [ml/detector.py:170-232](file://ml/detector.py#L170-L232)
 
 **Section sources**
-- [ml/detector.py:170-232](file://TraceTree/ml/detector.py#L170-L232)
-- [ml/detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [ml/detector.py:170-232](file://ml/detector.py#L170-L232)
+- [ml/detector.py:235-299](file://ml/detector.py#L235-L299)
 
 ### Example Detection Types with Trace Evidence and Confidence Scores
 - Behavioral signature: credential_theft
@@ -273,9 +273,9 @@ Cap --> End(["Final verdict + confidence"])
   - Confidence: boosted by severity and temporal patterns
 
 **Section sources**
-- [README.md:155-174](file://TraceTree/README.md#L155-L174)
-- [monitor/signatures.py:474-487](file://TraceTree/monitor/signatures.py#L474-L487)
-- [ml/detector.py:170-232](file://TraceTree/ml/detector.py#L170-L232)
+- [README.md:155-174](file://README.md#L155-L174)
+- [monitor/signatures.py:474-487](file://monitor/signatures.py#L474-L487)
+- [ml/detector.py:170-232](file://ml/detector.py#L170-L232)
 
 ## Dependency Analysis
 The detection pipeline depends on:
@@ -297,15 +297,15 @@ ML --> CLI["cli.py"]
 ```
 
 **Diagram sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
-- [monitor/parser.py:340-679](file://TraceTree/monitor/parser.py#L340-L679)
-- [monitor/signatures.py:86-115](file://TraceTree/monitor/signatures.py#L86-L115)
-- [monitor/timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [graph/builder.py:8-31](file://TraceTree/graph/builder.py#L8-L31)
-- [ml/detector.py:235-299](file://TraceTree/ml/detector.py#L235-L299)
+- [cli.py:181-259](file://cli.py#L181-L259)
+- [monitor/parser.py:340-679](file://monitor/parser.py#L340-L679)
+- [monitor/signatures.py:86-115](file://monitor/signatures.py#L86-L115)
+- [monitor/timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [graph/builder.py:8-31](file://graph/builder.py#L8-L31)
+- [ml/detector.py:235-299](file://ml/detector.py#L235-L299)
 
 **Section sources**
-- [cli.py:181-259](file://TraceTree/cli.py#L181-L259)
+- [cli.py:181-259](file://cli.py#L181-L259)
 
 ## Performance Considerations
 - Feature dimensionality: The current detector uses a 10-feature vector. The model is backward compatible with older 5-feature models by truncating to the model’s expected feature count.
@@ -322,9 +322,9 @@ Common issues and resolutions:
 - Low confidence despite suspicious behavior: Severity and temporal boosts can increase confidence; ensure sufficient severity and temporal patterns are present.
 
 **Section sources**
-- [monitor/signatures.py:57-83](file://TraceTree/monitor/signatures.py#L57-L83)
-- [monitor/timeline.py:298-331](file://TraceTree/monitor/timeline.py#L298-L331)
-- [ml/detector.py:108-146](file://TraceTree/ml/detector.py#L108-L146)
+- [monitor/signatures.py:57-83](file://monitor/signatures.py#L57-L83)
+- [monitor/timeline.py:298-331](file://monitor/timeline.py#L298-L331)
+- [ml/detector.py:108-146](file://ml/detector.py#L108-L146)
 
 ## Conclusion
 TraceTree’s three-layer detection system combines rule-based behavioral signatures, temporal pattern analysis, and machine learning to provide robust runtime security analysis. The severity-weighted syscall scoring and network destination classification enrich ML confidence, while the Isolation Forest fallback ensures detection capability even without a trained model. The system’s modular design allows easy extension and improvement, particularly through supervised training with larger datasets.
@@ -344,7 +344,7 @@ TraceTree’s three-layer detection system combines rule-based behavioral signat
 - persistence_cron (severity 7): openat crontab path → write
 
 **Section sources**
-- [data/signatures.json:1-246](file://TraceTree/data/signatures.json#L1-L246)
+- [data/signatures.json:1-246](file://data/signatures.json#L1-L246)
 
 ### Appendix B: Temporal Patterns Reference
 - connect_then_shell (severity 10): external connect → execve /bin/sh within 3s
@@ -354,7 +354,7 @@ TraceTree’s three-layer detection system combines rule-based behavioral signat
 - burst_process_spawn (severity 7): ≥5 clone/execve within 2s
 
 **Section sources**
-- [monitor/timeline.py:288-295](file://TraceTree/monitor/timeline.py#L288-L295)
+- [monitor/timeline.py:288-295](file://monitor/timeline.py#L288-L295)
 
 ### Appendix C: Network Destination Categories
 - safe_registry: known package registry/CDN ranges (risk 0.0)
@@ -363,4 +363,4 @@ TraceTree’s three-layer detection system combines rule-based behavioral signat
 - unknown: default (risk 3.0)
 
 **Section sources**
-- [monitor/parser.py:250-316](file://TraceTree/monitor/parser.py#L250-L316)
+- [monitor/parser.py:250-316](file://monitor/parser.py#L250-L316)
