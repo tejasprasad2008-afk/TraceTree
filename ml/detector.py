@@ -10,14 +10,19 @@ from rich.console import Console
 
 console = Console()
 
+import hashlib
+import json
+
 # Global model cache to avoid repeated disk I/O and unpickling
 _MODEL_CACHE = None
+_PREDICTION_CACHE = {}
 
 
 def clear_model_cache():
-    """Invalidates the in-memory model cache."""
-    global _MODEL_CACHE
+    """Invalidates the in-memory model and prediction caches."""
+    global _MODEL_CACHE, _PREDICTION_CACHE
     _MODEL_CACHE = None
+    _PREDICTION_CACHE = {}
 
 
 # --------------------------------------------------------------------------- #
@@ -267,8 +272,14 @@ def detect_anomaly(
     Returns:
         (is_malicious, confidence) where confidence is 0.0-99.9%.
     """
-    model = get_ml_model()
     target_features = map_features(graph_data, parsed_data)
+
+    # 2.9 MODEL CACHING - check if we have a cached prediction for these features
+    feature_hash = hashlib.sha256(json.dumps(target_features).encode()).hexdigest()
+    if feature_hash in _PREDICTION_CACHE:
+        return _PREDICTION_CACHE[feature_hash]
+
+    model = get_ml_model()
 
     # Determine how many features the model was trained on
     if isinstance(model, RandomForestClassifier):
@@ -315,4 +326,7 @@ def detect_anomaly(
         temporal_patterns,
     )
 
-    return is_malicious, confidence
+    result = (is_malicious, confidence)
+    _PREDICTION_CACHE[feature_hash] = result
+    
+    return result

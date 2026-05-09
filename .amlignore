@@ -1,0 +1,22 @@
+**/*.gif
+**/*.png
+**/*.jpg
+**/*.zip
+**/logs/
+**/__pycache__/
+**/venv/
+**/traceenv/
+**/.git/
+**/.claude/
+**/.gemini/
+**/.vscode/
+**/TraceTree/  # Exclude nested duplicate folder
+**/build/
+**/dist/
+*.egg-info/
+ml/model.pkl
+**/data/mcp_rce_signatures.yara
+**/docs/
+**/examples/
+**/tests/
+**/samples/

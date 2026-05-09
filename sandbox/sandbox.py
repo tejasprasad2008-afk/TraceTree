@@ -199,6 +199,45 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
     Returns:
         Path to the strace log file, or empty string on failure.
     """
+    mode = os.environ.get("TRACETREE_SANDBOX_MODE", "docker")
+
+    if mode == "direct":
+        # Direct execution mode (no Docker) — used in cloud jobs or CI
+        import subprocess
+        log_dir = Path.cwd() / "logs"
+        log_dir.mkdir(exist_ok=True)
+        log_file_path = log_dir / f"{Path(target).name}_{target_type}_strace.log"
+        
+        env_vars = os.environ.copy()
+        env_vars["TARGET"] = target
+        if env:
+            env_vars.update(env)
+
+        # Map target_type to script
+        if target_type == "pip":
+            script = """
+pip download "$TARGET" --dest /tmp/pkg > /dev/null 2>&1
+strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log pip install --no-index --find-links /tmp/pkg "$TARGET" > /dev/null 2>&1
+cp /tmp/strace.log "{log_path}"
+"""
+        elif target_type == "npm":
+            script = """
+npm install "$TARGET" --global --dry-run > /dev/null 2>&1
+strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log npm install "$TARGET" --no-audit --no-fund > /dev/null 2>&1
+cp /tmp/strace.log "{log_path}"
+"""
+        else:
+            # Fallback for dmg/exe/shell — needs more complex mapping if supported in direct mode
+            console.print(f"[yellow]Warning:[/] Direct mode only supports 'pip' and 'npm' currently.")
+            return ""
+
+        try:
+            subprocess.run(["/bin/bash", "-c", script.format(log_path=log_file_path)], env=env_vars, check=True)
+            return str(log_file_path)
+        except Exception as e:
+            console.print(f"[bold red]Direct Execution Error:[/] {e}")
+            return ""
+
     if docker is None:
         console.print("[bold red]Dependency Error:[/] The 'docker' Python SDK is not accessible.")
         return ""
@@ -235,6 +274,16 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
 
     if target_type == "pip":
         sandbox_script = """
+# Honeypot Setup
+mkdir -p ~/.aws
+echo "[default]
+aws_access_key_id = AKIAHONEPOTEXAMPLE
+aws_secret_access_key = secret/honeypot/key/exfil/target
+" > ~/.aws/credentials
+echo "fake_db_password=honeypot_db_pass_123" > ~/.env
+# Fake shadow file access check
+echo "root:$6$honeypot$zXy...:19000:0:99999:7:::" > /tmp/fake_shadow
+
 # Resource monitoring setup
 RESOURCE_FILE="/tmp/resources.json"
 echo '{"initial": {"mem_total_kb": '$(grep MemTotal /proc/meminfo | awk '{print $2}')', "cpu_count": '$(nproc)'}, "samples": []}' > "$RESOURCE_FILE"
@@ -326,6 +375,12 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
 
     container = None
     try:
+        # Load seccomp profile if it exists
+        security_opt = []
+        seccomp_path = Path(__file__).parent / "deny.json"
+        if seccomp_path.exists():
+            security_opt.append(f"seccomp={seccomp_path.absolute()}")
+
         try:
             container = client.containers.run(
                 image=image_tag,
@@ -333,8 +388,13 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
                 detach=True,
                 remove=False,
                 cap_add=["NET_ADMIN"],
+                security_opt=security_opt,
                 volumes=volumes,
                 environment=env_vars,
+                mem_limit="512m",
+                cpu_period=100000,
+                cpu_quota=25000,
+                pids_limit=100
             )
         except Exception as e:
             console.print(f"\n[bold red]Execution Error:[/] {e}")

@@ -1,0 +1,20 @@
+{
+  "defaultAction": "SCMP_ACT_LOG",
+  "syscalls": [
+    {
+      "action": "SCMP_ACT_KILL",
+      "names": [
+        "unshare",
+        "pivot_root",
+        "bpf",
+        "mount",
+        "umount2",
+        "swapon",
+        "swapoff",
+        "reboot",
+        "sethostname",
+        "setdomainname"
+      ]
+    }
+  ]
+}

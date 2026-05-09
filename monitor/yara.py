@@ -47,6 +47,7 @@ rule ReverseShellPattern {
         $nc = "nc -e /bin/" nocase
         $curl_sh = /curl\s+\S+\|.*(?:bash|sh)/ nocase
         $wget_sh = /wget\s+\S+\s+-O.*\|.*(?:bash|sh)/ nocase
+        $python_rs = /python\d?\s+-c.*socket\.socket.*connect/ nocase
     condition:
         any of them
 }
@@ -96,7 +97,7 @@ rule ObfuscatedEval {
         description = "Detects eval/exec of dynamically constructed code"
         severity = "high"
     strings:
-        $eval_b64 = /eval\s*\(\s*(?:base64|decode|b64decode)\s*\(/ nocase
+        $eval_b64 = /eval\s*\(\s*(?:base64|decode|b64decode)\s*\(|eval\s*\(\s*zlib\.decompress/ nocase
         $exec_comp = /exec\s*\(\s*(?:compile|__import__)\s*\(/ nocase
         $chr_exec = /chr\(\d+\)\s*\+\s*chr\(\d+\)/ ascii
     condition:
@@ -113,6 +114,32 @@ rule MaliciousPostInstall {
         $c2_pattern = /(?:stratum\+tcp://|pastebin|transfer\.sh|file\.io|0x0\.st)/ nocase
     condition:
         2 of them
+}
+
+rule KernelModuleExploit {
+    meta:
+        description = "Detects kernel module loading indicators in scripts or logs"
+        severity = "critical"
+    strings:
+        $init = "init_module" nocase
+        $finit = "finit_module" nocase
+        $insmod = "insmod " nocase
+        $rmmod = "rmmod " nocase
+    condition:
+        any of them
+}
+
+rule ContainerEscapeIndicator {
+    meta:
+        description = "Detects common container escape and privilege escalation payloads"
+        severity = "critical"
+    strings:
+        $proc1 = "/proc/1/root" nocase
+        $cgroup = "/sys/fs/cgroup" nocase
+        $dsock = "docker.sock" nocase
+        $unshare = "unshare -m" nocase
+    condition:
+        any of them
 }
 """
 
@@ -155,7 +182,7 @@ def scan_with_yara(
     files_to_scan = _collect_files(log_path, package_dir)
     for fpath in files_to_scan:
         try:
-            matches = rules.match(fpath)
+            matches = rules.match(str(fpath))
             for m in matches:
                 results.append({
                     "rule_name": m.rule,
@@ -180,12 +207,25 @@ def scan_with_yara(
 
 
 def _compile_yara_rules(yara):
-    """Compile embedded rules using yara-python."""
+    """Compile embedded and external rules using yara-python."""
     try:
+        # Load external MCP RCE signatures if they exist
+        mcp_yara_path = Path(__file__).parent.parent / "data" / "mcp_rce_signatures.yara"
+        
+        if mcp_yara_path.exists():
+            return yara.compile(filepaths={
+                "embedded": Path("/tmp/embedded.yara"), # Dummy key
+                "mcp": str(mcp_yara_path)
+            }, source=_YARA_RULES_SRC)
+        
         return yara.compile(source=_YARA_RULES_SRC)
     except Exception as e:
         log.warning("YARA compile error: %s", e)
-        return None
+        # Try compiling only the embedded source if combined failed
+        try:
+            return yara.compile(source=_YARA_RULES_SRC)
+        except Exception:
+            return None
 
 
 # --------------------------------------------------------------------------- #

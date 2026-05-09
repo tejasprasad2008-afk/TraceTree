@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
@@ -7,14 +7,22 @@ from typing import Optional, Dict, Any, List
 import uuid
 import os
 
+# --- Security ---
+# In a production app, these would be in a database or vault
+VALID_API_KEYS = {"tracetree_secret_dev_key", "sk-trace-78560908"}
+
+async def verify_api_key(x_api_key: str = Header(...)):
+    if x_api_key not in VALID_API_KEYS:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return x_api_key
+
 app = FastAPI(
-    title="Cascading Behavioral Propagation Analyzer",
+    title="TraceTree API",
     description="API for analyzing suspicious Python packages by monitoring runtime behavioral cascades.",
     version="1.0.0"
 )
 
 # Enable CORS for frontend development
-# allow_credentials must be False when allow_origins is ["*"] for security and Starlette compatibility
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,20 +31,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory mock database for tracking analysis jobs
+# In-memory database for tracking analysis jobs
+# In Phase 2.3, this will move to Redis
 mock_db: Dict[str, Dict[str, Any]] = {
     "demo-id": {
         "id": "demo-id",
         "status": "completed",
         "package_name": "requests-async-v2",
         "verdict": "MALICIOUS",
-        "confidence_score": 0.98
+        "confidence_score": 0.98,
+        "logs": []
     }
 }
 
 class AnalysisRequest(BaseModel):
     package_name: str
-    pypi_url: Optional[str] = None
+    target_type: str = "pip"  # pip, npm, dmg, exe
+    env_vars: Optional[Dict[str, str]] = None
 
 class AnalysisResult(BaseModel):
     id: str
@@ -44,6 +55,7 @@ class AnalysisResult(BaseModel):
     package_name: str
     verdict: Optional[str] = None
     confidence_score: Optional[float] = None
+    error: Optional[str] = None
 
 class GraphNodeData(BaseModel):
     id: str
@@ -65,44 +77,89 @@ class GraphVisualizationResponse(BaseModel):
     nodes: List[GraphNode]
     edges: List[GraphEdge]
 
-def mock_analysis_task(analysis_id: str, package_name: str):
+# --- Real Analysis Task ---
+
+def run_real_analysis(analysis_id: str, package_name: str, target_type: str, env_vars: Dict[str, str] = None):
     """
-    Mock background task that simulates the full pipeline:
-    1. Docker Sandbox Execution
-    2. Strace Monitoring
-    3. NetworkX Graph Building
-    4. ML Anomaly Detection (scikit-learn)
+    Orchestrates the real TraceTree analysis pipeline.
     """
-    import time
-    time.sleep(2)  # Simulate processing delay
-    if analysis_id in mock_db:
-        mock_db[analysis_id]["status"] = "completed"
-        mock_db[analysis_id]["verdict"] = "CLEAN"
-        mock_db[analysis_id]["confidence_score"] = 0.50
+    from sandbox.sandbox import run_sandbox
+    from monitor.parser import parse_strace_log
+    from graph.builder import build_cascade_graph
+    from ml.detector import detect_anomaly
+    
+    try:
+        # 1. Sandbox Execution
+        log_path = run_sandbox(package_name, target_type=target_type, env=env_vars)
+        if not log_path:
+            mock_db[analysis_id].update({"status": "failed", "error": "Sandbox failed to produce logs"})
+            return
+
+        # 2. Parsing
+        parsed = parse_strace_log(log_path)
+        
+        # 3. Graphing
+        graph = build_cascade_graph(parsed)
+        
+        # 4. ML Detection
+        is_malicious, confidence = detect_anomaly(graph, parsed)
+        
+        # Update DB
+        mock_db[analysis_id].update({
+            "status": "completed",
+            "verdict": "MALICIOUS" if is_malicious else "CLEAN",
+            "confidence_score": confidence,
+            "graph": graph  # Store for later retrieval
+        })
+        
+    except Exception as e:
+        mock_db[analysis_id].update({"status": "failed", "error": str(e)})
 
 @app.post("/analyze", response_model=AnalysisResult)
-async def submit_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
+async def submit_analysis(
+    request: AnalysisRequest, 
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
+):
     analysis_id = str(uuid.uuid4())
     mock_db[analysis_id] = {
         "id": analysis_id,
         "status": "pending",
         "package_name": request.package_name,
         "verdict": None,
-        "confidence_score": None
+        "confidence_score": None,
+        "error": None
     }
-    background_tasks.add_task(mock_analysis_task, analysis_id, request.package_name)
+    
+    # 2.2 IMPLEMENT ASYNC JOB QUEUE (via BackgroundTasks)
+    background_tasks.add_task(
+        run_real_analysis, 
+        analysis_id, 
+        request.package_name, 
+        request.target_type, 
+        request.env_vars
+    )
+    
     return mock_db[analysis_id]
 
 @app.get("/results/{analysis_id}", response_model=AnalysisResult)
-async def get_results(analysis_id: str):
+async def get_results(analysis_id: str, api_key: str = Depends(verify_api_key)):
     if analysis_id not in mock_db:
         raise HTTPException(status_code=404, detail="Analysis ID not found")
     return mock_db[analysis_id]
 
 @app.get("/graph/{analysis_id}", response_model=GraphVisualizationResponse)
-async def get_graph(analysis_id: str):
+async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
     if analysis_id not in mock_db:
         raise HTTPException(status_code=404, detail="Analysis ID not found")
+    
+    # Check if real graph data exists
+    if "graph" in mock_db[analysis_id]:
+        # Convert internal graph format to Cytoscape-compatible for frontend
+        internal_graph = mock_db[analysis_id]["graph"]
+        # ... logic to convert to GraphVisualizationResponse ...
+        # For now, returning mock to avoid breakages
+        pass
         
     package_name = mock_db[analysis_id]["package_name"]
     
@@ -121,6 +178,16 @@ async def get_graph(analysis_id: str):
             GraphEdge(data=GraphEdgeData(source="p3", target="f1", label="openat"))
         ]
     )
+
+@app.get("/")
+async def root():
+    """Redirect root access to the dashboard."""
+    return RedirectResponse(url="/app/")
+
+# Mount the frontend directory to serve static UI files under /app path
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+if os.path.isdir(frontend_path):
+    app.mount("/app", StaticFiles(directory=frontend_path, html=True), name="frontend")
 
 @app.get("/")
 async def root():
