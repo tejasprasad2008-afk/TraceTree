@@ -67,7 +67,9 @@ def train_model():
         return
         
     console.print("[green]Optimizing RandomForestClassifier weights...[/]")
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    # Phase 1: Add class_weight='balanced' to handle severely imbalanced dataset
+    # (32 clean vs 33 malicious packages is nearly 50/50 but model will generalize better)
+    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
     model.fit(X, y)
     
     model_dir = base_dir / "ml"

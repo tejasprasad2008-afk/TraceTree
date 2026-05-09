@@ -181,7 +181,7 @@ echo "[exe] Analysis complete — log: $LOG_FILE" >&2
 # --------------------------------------------------------------------------- #
 
 
-def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = None) -> str:
+def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = None, env: dict = None) -> str:
     """
     Executes the package/installer logic inside an isolated Docker container.
     Captures syscalls using strace.
@@ -191,6 +191,10 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
       - npm: Installs an npm package
       - dmg: Extracts and traces executables from a macOS DMG image
       - exe: Runs a Windows EXE under wine64 with syscall tracing
+
+    Additional parameters:
+      - env: Optional dict of environment variables to inject into the container.
+            Example: {"AWS_ACCESS_KEY_ID": "fake", "SECRET_KEY": "test"}
 
     Returns:
         Path to the strace log file, or empty string on failure.
@@ -221,7 +225,13 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
 
     log_file_in_container = "/tmp/strace.log"
     volumes = {}
+    # Phase 1: Support for environment variable injection
     env_vars = {"TARGET": target}  # Pass target via environment variable, not string interpolation
+    # Merge user-provided environment variables (if any)
+    if env:
+        for k, v in env.items():
+            if k and v is not None:
+                env_vars[k] = str(v)
 
     if target_type == "pip":
         sandbox_script = """
