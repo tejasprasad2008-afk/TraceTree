@@ -3,7 +3,7 @@ import sys
 import time
 import typer
 import platform
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
@@ -1223,11 +1223,162 @@ def diff_cmd(
     console.print("\n" + "─" * console.width + "\n")
 
 
+@app.command(name="scan")
+def scan_cmd(
+    path: str = typer.Argument(".", help="File or directory to scan for secrets."),
+    exit_code: bool = typer.Option(True, "--exit-code/--no-exit-code", help="Return non-zero exit code if secrets found."),
+    ai: bool = typer.Option(False, "--ai", help="Use local AI (Ollama + Qwen2.5-Coder) to verify findings."),
+):
+    """
+    Security Guardian: Scan for hardcoded secrets and malicious patterns.
+    
+    Checks for API keys (NVIDIA, OpenAI, AWS), high-entropy strings, 
+    'print/console.log' calls, and malicious code injections.
+    
+    Use --ai to perform deep contextual analysis using a local LLM.
+    """
+    from monitor.scanner import scan_directory, scan_file_for_secrets
+    from rich.table import Table
+
+    scan_path = Path(path)
+    if not scan_path.exists():
+        console.print(f"[bold red]Error:[/] Path not found: {path}")
+        raise typer.Exit(1)
+
+    console.print(Panel.fit(
+        f"[bold cyan]TraceTree Security Guardian {'[AI-ENHANCED]' if ai else ''}[/]\n"
+        f"Scanning: [bold yellow]{scan_path.resolve()}[/]",
+        border_style="cyan"
+    ))
+
+    findings = []
+    if scan_path.is_file():
+        for f in scan_file_for_secrets(scan_path):
+            f["file_path"] = str(scan_path)
+            findings.append(f)
+    else:
+        with Progress(
+            SpinnerColumn("dots2", style="cyan"),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task("Scanning files...", total=None)
+            findings = scan_directory(scan_path)
+
+    if not findings:
+        console.print("\n[bold green]✔ No issues detected.[/]\n")
+        return
+
+    # ── AI Assisted Verification ──
+    if ai:
+        from monitor.ai_analyzer import analyze_finding_with_ai, get_file_context, ensure_ollama_and_model
+        
+        # Interactively ensure the AI engine is ready
+        if not ensure_ollama_and_model():
+            console.print("[bold yellow]⚠ AI setup incomplete or cancelled. Skipping AI verification.[/]")
+            ai = False
+        else:
+            console.print(f"[bold magenta]🧠 AI Reviewing {len(findings)} potential hit(s) for false positives...[/]")
+            verified_findings = []
+            
+            with Progress(
+                SpinnerColumn("dots", style="magenta"),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+                transient=False,
+            ) as progress:
+                for f in findings:
+                    task = progress.add_task(f"Auditing: [dim]{f['file_path']}:{f['line_number']}[/]", total=None)
+                    
+                    context = get_file_context(Path(f["file_path"]), f["line_number"])
+                    ai_result = analyze_finding_with_ai(
+                        file_path=f["file_path"],
+                        line_number=f["line_number"],
+                        finding_type=f["type"],
+                        rule_name=f["rule_name"],
+                        content=f["content"],
+                        full_context=context
+                    )
+                    
+                    if "error" in ai_result:
+                        f["ai_reason"] = f"AI Verification Failed: {ai_result['error']}"
+                        f["ai_severity"] = 5 # Default medium
+                        verified_findings.append(f)
+                        progress.update(task, description=f"[bold yellow]⚠ UNVERIFIED:[/] [dim]{f['file_path']}[/]")
+                    elif ai_result.get("is_vulnerable"):
+                        f["ai_reason"] = ai_result.get("reason", "No reason provided")
+                        f["ai_severity"] = ai_result.get("severity", 5)
+                        verified_findings.append(f)
+                        progress.update(task, description=f"[bold red]✖ CONFIRMED:[/] [dim]{f['file_path']}[/]")
+                    else:
+                        progress.update(task, description=f"[bold green]✔ DISMISSED:[/] [dim]{f['file_path']} (False Positive)[/]")
+            
+            findings = verified_findings
+
+    if not findings:
+        console.print("\n[bold green]✔ AI verified all hits as false positives (or no hits found). Project is CLEAN.[/]\n")
+        return
+
+    # Display findings
+    table = Table(title="[bold red]Security Findings Report[/]", show_header=True, header_style="bold magenta")
+    table.add_column("File", style="dim")
+    table.add_column("Line", justify="right")
+    table.add_column("Type", style="bold")
+    table.add_column("Rule", style="yellow")
+    if ai:
+        table.add_column("AI Reasoning (The 'Why')", style="italic cyan")
+    else:
+        table.add_column("Content (Partial)", overflow="ellipsis")
+
+    for f in findings:
+        if ai and "ai_reason" in f:
+            display_content = f.get("ai_reason", "")
+            type_color = "red" if f.get("ai_severity", 0) >= 7 else "yellow"
+        else:
+            display_content = f["content"][:50] + "..." if len(f["content"]) > 50 else f["content"]
+            if f["type"] == "secret":
+                type_color = "red"
+            elif f["type"] == "malicious":
+                type_color = "bold red"
+            else:
+                type_color = "yellow"
+        
+        table.add_row(
+            f["file_path"],
+            str(f["line_number"]),
+            f"[{type_color}]{f['type'].upper()}[/]",
+            f"[{type_color}]{f['rule_name']}[/]" if f["type"] == "malicious" else f["rule_name"],
+            display_content
+        )
+
+    console.print("\n")
+    console.print(table)
+    console.print(f"\n[bold red]✖ Found {len(findings)} verified security issue(s).[/]")
+    
+    if exit_code:
+        raise typer.Exit(1)
+
+
 # ------------------------------------------------------------------ #
 #  Standalone entry-point wrappers for console_scripts
 #  These create dedicated Typer apps so `cascade-watch <args>` works
 #  as a top-level command instead of `cascade-analyze watch <args>`.
 # ------------------------------------------------------------------ #
+
+scan_app = typer.Typer(
+    name="cascade-scan",
+    help="Secret Guardian: Scan for hardcoded secrets and risky debug logging.",
+)
+
+@scan_app.command()
+def _scan_cmd(
+    path: str = typer.Argument(".", help="File or directory to scan for secrets."),
+    exit_code: bool = typer.Option(True, "--exit-code/--no-exit-code", help="Return non-zero exit code if secrets found."),
+    ai: bool = typer.Option(False, "--ai", help="Use local AI (Ollama + Qwen2.5-Coder) to verify findings."),
+):
+    """Security Guardian: Scan for hardcoded secrets and malicious patterns."""
+    scan_cmd(path=path, exit_code=exit_code, ai=ai)
 
 watch_app = typer.Typer(
     name="cascade-watch",

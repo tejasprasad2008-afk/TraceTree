@@ -68,6 +68,37 @@ def _already_installed(rc_path: str) -> bool:
         return False
 
 
+def install_pre_commit_hook() -> bool:
+    """Install the Secret Guardian Git pre-commit hook."""
+    project_root = _project_root()
+    git_hooks_dir = project_root / ".git" / "hooks"
+    
+    if not git_hooks_dir.exists():
+        print("[!] Not a git repository or .git/hooks missing. Skipping pre-commit hook.")
+        return False
+
+    src_hook = project_root / "hooks" / "pre-commit.sh"
+    target_hook = git_hooks_dir / "pre-commit"
+
+    if not src_hook.exists():
+        print(f"[!] Pre-commit source not found at {src_hook}")
+        return False
+
+    # Backup existing hook if it's not ours
+    if target_hook.exists():
+        content = target_hook.read_text(encoding="utf-8")
+        if "TraceTree Secret Guardian" not in content:
+            backup = target_hook.with_suffix(".bak")
+            print(f"[dim]Backing up existing pre-commit hook to {backup}[/]")
+            shutil.copy2(str(target_hook), str(backup))
+
+    shutil.copy2(str(src_hook), str(target_hook))
+    target_hook.chmod(0o755)
+
+    print("✅ TraceTree Secret Guardian pre-commit hook installed!")
+    return True
+
+
 def install_hook() -> bool:
     """
     Install the TraceTree shell hook.
@@ -94,6 +125,8 @@ def install_hook() -> bool:
     # Check if already installed
     if _already_installed(rc_path):
         print(f"✅ TraceTree hook is already installed in {rc_path}")
+        # Even if shell hook is installed, try pre-commit hook
+        install_pre_commit_hook()
         return True
 
     # Determine install target directory
@@ -116,6 +149,9 @@ def install_hook() -> bool:
     print(f"   Script at: {target_hook}")
     print()
     print(f"   Run 'source {rc_path}' or open a new terminal to activate.")
+
+    # Also install pre-commit hook
+    install_pre_commit_hook()
     return True
 
 
