@@ -34,6 +34,7 @@ setup(
             "cascade-update=cli:update_cli",
             "cascade-watch=cli:watch_app",
             "cascade-check=cli:check_cli",
+            "cascade-scan=cli:scan_app",
             "cascade-install-hook=cli:install_hook_cli",
         ],
     },
