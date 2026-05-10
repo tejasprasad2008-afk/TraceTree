@@ -59,6 +59,15 @@ def is_ollama_installed() -> bool:
     import shutil
     return shutil.which("ollama") is not None
 
+def is_ollama_alive() -> bool:
+    """Check if the local Ollama service is reachable."""
+    try:
+        # Use tags endpoint as a health check
+        response = requests.get(f"{OLLAMA_BASE}/api/tags", timeout=2)
+        return response.status_code == 200
+    except Exception:
+        return False
+
 def ensure_ollama_and_model() -> bool:
     """
     Interactively ensure Ollama is installed and the required model is pulled.
@@ -162,7 +171,16 @@ def analyze_finding_with_ai(
             return {"error": f"Ollama returned error: {response.text}"}
 
         data = response.json()
-        result_json = json.loads(data.get("response", "{}"))
+        raw_response = data.get("response", "{}")
+        try:
+            result_json = json.loads(raw_response)
+        except json.JSONDecodeError:
+            return {"error": f"AI returned invalid JSON: {raw_response[:100]}..."}
+
+        # Validate required keys
+        if "is_vulnerable" not in result_json:
+            return {"error": f"AI response missing 'is_vulnerable' key: {raw_response[:100]}..."}
+            
         return result_json
 
     except Exception as e:

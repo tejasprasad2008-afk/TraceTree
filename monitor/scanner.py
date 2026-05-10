@@ -106,10 +106,12 @@ def scan_file_for_secrets(file_path: Path, skip_yara: bool = True) -> Generator[
         return
 
     try:
-        # Skip binary files
-        with open(file_path, 'tr') as f:
-            f.read(1024)
-    except (UnicodeDecodeError, PermissionError):
+        # Safe binary probe to skip binary files
+        with open(file_path, 'rb') as f:
+            chunk = f.read(1024)
+            if b'\x00' in chunk: # Standard binary check
+                return
+    except (UnicodeDecodeError, ValueError, OSError, PermissionError):
         return
 
     # 1. YARA Scanning (Deep detection of known malware signatures)

@@ -1301,7 +1301,12 @@ def scan_cmd(
                         full_context=context
                     )
                     
-                    if ai_result.get("is_vulnerable"):
+                    if "error" in ai_result:
+                        f["ai_reason"] = f"AI Verification Failed: {ai_result['error']}"
+                        f["ai_severity"] = 5 # Default medium
+                        verified_findings.append(f)
+                        progress.update(task, description=f"[bold yellow]⚠ UNVERIFIED:[/] [dim]{f['file_path']}[/]")
+                    elif ai_result.get("is_vulnerable"):
                         f["ai_reason"] = ai_result.get("reason", "No reason provided")
                         f["ai_severity"] = ai_result.get("severity", 5)
                         verified_findings.append(f)
