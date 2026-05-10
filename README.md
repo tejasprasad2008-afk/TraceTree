@@ -1,10 +1,21 @@
 # TraceTree
 
-![TraceTree Banner](tracetree%20banner.png)
+![TraceTree Banner](header%20banner.png)
 
 ![TraceTree Demo](tracetree%20ad.gif)
 
-Runtime behavioral analysis for Python packages, npm modules, DMG images, and Windows EXE files. Executes targets in a sandboxed Docker container, traces syscalls with strace, and classifies behavior using a combination of ML anomaly detection, rule-based signature matching, and temporal pattern analysis.
+**TraceTree** (cascade-analyzer) is an autonomous security organism designed for the agentic era. It moves beyond simple scanning into a robust, hardened, and scalable detection ecosystem. Like its mascot, the spider, TraceTree weaves a comprehensive web of protection around your development workflow using its eight specialized "legs."
+
+## The 8 Legs of the TraceTree Spider
+
+1.  **Leg 1: Sandbox Isolation (The Trap)** — Executes targets in isolated Docker containers (or a high-performance `direct` mode) where threats are physically contained.
+2.  **Leg 2: Syscall Parsing (The Nervous System)** — A high-precision engine that monitors every "vibration" (system call) a process makes to the OS.
+3.  **Leg 3: Behavioral Graphing (The Web)** — Maps the "Cascade" of how processes, files, and network nodes interact using NetworkX directed graphs.
+4.  **Leg 4: ML Anomaly Detection (The Intuition)** — A custom-trained Random Forest model (trained on 841 packages) that predicts malicious intent with high confidence.
+5.  **Leg 5: YARA Signature Matching (The Memory)** — An integrated library of known malware DNA and exploit patterns (Reverse Shells, Cryptominers, etc.).
+6.  **Leg 6: MCP Security Protocol (The Agent Shield)** — Specialized protection for Model Context Protocol servers, defending the tools that AI agents use.
+7.  **Leg 7: Security Guardian AI (The Proactive Web)** — A pre-commit "Smart Scanner" using local LLMs (Qwen-Coder) to catch leaks and injections before they hit your history.
+8.  **Leg 8: Temporal & N-gram Analysis (The DNA Scan)** — Identifies threats by the *rhythm* and *sequence* of their actions across time.
 
 ## How It Works
 
