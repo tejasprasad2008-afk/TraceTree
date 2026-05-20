@@ -1,0 +1,51 @@
+{
+  "name": "openclue",
+  "version": "0.1.0",
+  "description": "Open-source autonomous security detection and response platform",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "openclue": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli/index.js",
+    "dev": "tsx src/cli/index.ts",
+    "test": "vitest run",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "security",
+    "soar",
+    "automation",
+    "mcp",
+    "llm",
+    "clue"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8",
+    "chalk": "^5.3.0",
+    "inquirer": "^10.0.0",
+    "fastify": "^4.28.1",
+    "@fastify/websocket": "^8.3.1",
+    "@fastify/cors": "^9.0.1",
+    "nanoid": "^5.0.7",
+    "better-sqlite3": "^11.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/inquirer": "^9.0.7",
+    "@types/better-sqlite3": "^7.6.11",
+    "typescript": "^5.5.3",
+    "tsx": "^4.16.2",
+    "vitest": "^1.6.0",
+    "eslint": "^9.6.0",
+    "prettier": "^3.3.2"
+  }
+}
