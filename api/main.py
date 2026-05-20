@@ -8,8 +8,8 @@ import uuid
 import os
 
 # --- Security ---
-# In a production app, these would be in a database or vault
-VALID_API_KEYS = {"tracetree_secret_dev_key", "sk-trace-78560908"}
+# Load API keys from environment variable for production
+VALID_API_KEYS = set(os.getenv("TRACETREE_API_KEYS", "tracetree_secret_dev_key,sk-trace-78560908").split(","))
 
 async def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key not in VALID_API_KEYS:
