@@ -4,16 +4,16 @@ import fastifyCors from '@fastify/cors';
 import { nanoid } from 'nanoid';
 import 'dotenv/config';
 
-import { OpenClueEngine } from './engine/index.js';
+import { TraceTreeEngine } from './engine/index.js';
 import { createLLMProvider } from './llm/index.js';
 import { SessionStore } from './store/index.js';
 import { logger } from './utils/index.js';
-import { User, AuditLogEntry } from './types/index.js';
+import { AuditLogEntry } from './types/index.js';
 
 const fastify = Fastify({ logger: true });
 const store = new SessionStore();
 const llm = createLLMProvider();
-const engine = new OpenClueEngine(llm, store);
+const engine = new TraceTreeEngine(llm, store);
 
 // --- Middleware & Plugins ---
 fastify.register(fastifyCors, { origin: "*" });
@@ -37,7 +37,7 @@ const broadcast = (event: string, payload: any) => {
 /**
  * Health Check
  */
-fastify.get('/health', async () => ({ status: 'UP', engine: 'OpenClue v0.2.0' }));
+fastify.get('/health', async () => ({ status: 'UP', engine: 'TraceTree v0.2.0' }));
 
 /**
  * Start Investigation

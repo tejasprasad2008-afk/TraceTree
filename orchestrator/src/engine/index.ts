@@ -3,15 +3,13 @@ import {
   InvestigationSummary,
   LLMProvider,
   HITLState,
-  SessionStatus,
-  InvestigationPhase
 } from '../types/index.js';
 import { logger } from '../utils/index.js';
 import { InvestigationPlanner } from '../planner/index.js';
 import { MCPRouter } from '../mcp/index.js';
 import { SessionStore } from '../store/index.js';
 
-export class OpenClueEngine {
+export class TraceTreeEngine {
   private planner: InvestigationPlanner;
   private mcp: MCPRouter;
   private store: SessionStore;

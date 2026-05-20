@@ -1,5 +1,5 @@
 /**
- * Unified TraceTree & OpenClue Type Definitions
+ * Unified TraceTree Type Definitions
  * Enterprise-grade multi-user support.
  */
 
@@ -66,6 +66,8 @@ export interface InvestigationPlan {
   phase: InvestigationPhase;
   createdAt: string;
   updatedAt: string;
+  currentStepIndex?: number; // Internal tracking
+  state?: string; // Legacy field fix
 }
 
 export interface HITLState {
@@ -83,6 +85,13 @@ export interface InvestigationSummary {
   summary: string; // Markdown
   timeline: any[];
   durationMs: number;
+  planId?: string; // Compatibility
+  postureGaps?: any[];
+  mitigationMetrics?: {
+    stepsExecuted: number;
+    toolsUsed: string[];
+    durationMs: number;
+  };
 }
 
 export interface ToolDefinition {
@@ -109,4 +118,44 @@ export interface MCPServerConfig {
   args?: string[];
   env?: Record<string, string>;
   url?: string;
+}
+
+/**
+ * LLM Provider Types
+ */
+export interface LLMMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface LLMOptions {
+  temperature?: number;
+  maxTokens?: number;
+  responseFormat?: 'text' | 'json';
+  stopSequences?: string[];
+}
+
+export interface LLMResponse {
+  content: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+  };
+}
+
+export interface LLMProvider {
+  name: string;
+  generateCompletion(messages: LLMMessage[], options?: LLMOptions): Promise<LLMResponse>;
+}
+
+/**
+ * Triage Alert Payload
+ */
+export interface AlertPayload {
+  id: string;
+  type: string;
+  source: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  details: Record<string, any>;
+  timestamp: string;
 }

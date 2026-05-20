@@ -4,11 +4,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const ASCII_ART = `
-${chalk.cyan('   ____                      _____  _             ')}
-${chalk.cyan('  / __ \\ ___   ___  _ __    / ____|| | _   _   ___ ')}
-${chalk.cyan(' | |  | |/ _ \\ / _ \\| \'_ \\  | |     | || | | | / _ \\')}
-${chalk.cyan(' | |__| |  __/|  __/| | | | | |____ | || |_| ||  __/')}
-${chalk.cyan('  \\____/ \\___| \\___||_| |_|  \\_____||_| \\__,_| \\___|')}
+${chalk.cyan('   _______                 _______')}
+${chalk.cyan('  |__   __|               |__   __|')}
+${chalk.cyan('     | |_ __ __ _  ___ ___   | |_ __ ___  ___')}
+${chalk.cyan('     | | \'__/ _` |/ __/ _ \\  | | \'__/ _ \\/ _ \\')}
+${chalk.cyan('     | | | | (_| | (_|  __/  | | | |  __/  __/')}
+${chalk.cyan('     |_|_|  \\__,_|\\___\\___|  |_|_|  \\___|\\___|')}
                                                      
     ${chalk.white.bold('Open Source Detection & Response Platform')}
     ${chalk.gray('v0.1.0 | Autonomous Investigation Engine')}
@@ -19,7 +20,7 @@ ${chalk.cyan('  \\____/ \\___| \\___||_| |_|  \\_____||_| \\__,_| \\___|')}
  */
 export async function runSetupWizard() {
   console.log(ASCII_ART);
-  console.log(chalk.white('Welcome to OpenClue. Let\'s get your environment configured.\n'));
+  console.log(chalk.white('Welcome to TraceTree. Let\'s get your environment configured.\n'));
 
   try {
     const { provider } = await inquirer.prompt([
@@ -90,7 +91,7 @@ export async function runSetupWizard() {
 
     console.log(chalk.green('\n[✓] Configuration complete!'));
     console.log(chalk.gray(`Settings persisted to ${envPath}\n`));
-    console.log(chalk.white('You can now run: ') + chalk.cyan('openclue investigate "A developer just escalated their privileges..."'));
+    console.log(chalk.white('You can now run: ') + chalk.cyan('tracetree investigate "A developer just escalated their privileges..."'));
 
   } catch (error: any) {
     if (error.isTtyError) {
