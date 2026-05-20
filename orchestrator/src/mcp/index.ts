@@ -37,9 +37,8 @@ export class MCPRouter {
         reject(err);
       });
 
-      // Simple handshake for tool discovery
-      // In a full implementation, this follows the official initialize -> tools/list flow
-      this.sendRequest(child, 'list_tools', {}).then((response: any) => {
+      // Handshake for tool discovery
+      this.sendRequest(child, 'tools/list', {}).then((response: any) => {
         const serverTools = response.tools || [];
         serverTools.forEach((tool: any) => {
           this.tools.set(tool.name, {
@@ -79,7 +78,7 @@ export class MCPRouter {
     const timeoutMs = 15000;
     
     // Racing primitive to ensure no hanging tool blocks the engine
-    const executionPromise = this.sendRequest(client, 'call_tool', {
+    const executionPromise = this.sendRequest(client, 'tools/call', {
       name: toolName,
       arguments: args
     });
@@ -120,16 +119,19 @@ export class MCPRouter {
       const onData = (data: Buffer) => {
         const responseString = data.toString();
         try {
-          // Note: Real MCP servers might send multiple chunks or interleaved stdout
-          // This simplified version assumes line-buffered JSON-RPC
-          const response = JSON.parse(responseString);
-          if (response.id === id) {
-            child.stdout?.removeListener('data', onData);
-            if (response.error) reject(new Error(response.error.message || 'Unknown JSON-RPC error'));
-            else resolve(response.result);
+          const lines = responseString.split('\n');
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const response = JSON.parse(line);
+            if (response.id === id) {
+              child.stdout?.removeListener('data', onData);
+              if (response.error) reject(new Error(response.error.message || 'Unknown JSON-RPC error'));
+              else resolve(response.result);
+              return;
+            }
           }
         } catch (e) {
-          // Not our response or malformed chunk, wait for more data
+          // Chunk might be incomplete, wait for more data
         }
       };
 

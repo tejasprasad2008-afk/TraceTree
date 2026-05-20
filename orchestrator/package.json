@@ -1,11 +1,11 @@
 {
-  "name": "openclue",
+  "name": "tracetree",
   "version": "0.1.0",
   "description": "Open-source autonomous security detection and response platform",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "openclue": "dist/cli/index.js"
+    "tracetree": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -21,7 +21,7 @@
     "automation",
     "mcp",
     "llm",
-    "clue"
+    "tracetree"
   ],
   "author": "",
   "license": "Apache-2.0",

@@ -4,17 +4,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import chalk from 'chalk';
 import 'dotenv/config';
-import { OpenClueEngine } from '../engine/index.js';
+import { TraceTreeEngine } from '../engine/index.js';
 import { createLLMProvider } from '../llm/index.js';
+import { SessionStore } from '../store/index.js';
 import { saveSession, loadSession, deleteSession } from '../utils/persistence.js';
 import { logger } from '../utils/index.js';
-import { AlertPayload } from '../types/index.js';
+import { AlertPayload, HITLState, InvestigationSummary } from '../types/index.js';
 import { runSetupWizard } from './setup.js';
 
 const program = new Command();
+const store = new SessionStore();
 
 program
-  .name('openclue')
+  .name('tracetree')
   .description('Autonomous Security Detection and Response Platform')
   .version('0.1.0');
 
@@ -24,14 +26,14 @@ program
  */
 program
   .command('init')
-  .description('Initialize the OpenClue environment and LLM provider')
+  .description('Initialize the TraceTree environment and LLM provider')
   .action(async () => {
-    await runSetupWizard();
+    runSetupWizard().then(() => {}).catch(() => {});
   });
 
 /**
  * COMMAND: investigate
- * Usage: openclue investigate "Prompt"
+ * Usage: tracetree investigate "Prompt"
  */
 program
   .command('investigate')
@@ -41,26 +43,25 @@ program
   .action(async (prompt: string, options) => {
     try {
       const llm = createLLMProvider();
-      const engine = new OpenClueEngine(llm);
+      const engine = new TraceTreeEngine(llm, store);
 
-      console.log(chalk.cyan(`\n[OPENCLUE] Starting investigation: ${prompt}${options.demo ? ' (DEMO MODE)' : ''}\n`));
+      console.log(chalk.cyan(`\n[TRACETREE] Starting investigation: ${prompt}${options.demo ? ' (DEMO MODE)' : ''}\n`));
       
       const result = await engine.investigate(prompt, { demo: options.demo });
 
-      if (result && 'isPending' in result) {
-        const sessionId = result.stepId + '_' + Date.now();
-        // Since the engine doesn't return the full session yet, we wrap it
-        // In a real implementation, investigate() would return a session container
-        // For this foundational build, we'll inform the user of the HITL pause.
-        console.log(chalk.yellow(`\n[!] HITL REQUIRED: Destructive tool detected (${result.toolCall.name})`));
-        console.log(chalk.white(`Reasoning: ${result.requesterReasoning}`));
+      if (result && 'stepId' in result) {
+        const hitl = result as HITLState;
+        const sessionId = hitl.sessionId || hitl.stepId + '_' + Date.now();
         
-        // We simulate saving the full state here - in practice, we'd pass the session object
-        await saveSession(sessionId, { hitl: result, prompt });
-        console.log(chalk.green(`\nSession saved. Run 'openclue resume ${sessionId}' to approve.`));
+        console.log(chalk.yellow(`\n[!] HITL REQUIRED: Destructive tool detected (${hitl.toolCall.name})`));
+        console.log(chalk.white(`Reasoning: ${hitl.requesterReasoning}`));
+        
+        await saveSession(sessionId, { hitl, prompt });
+        console.log(chalk.green(`\nSession saved. Run 'tracetree resume ${sessionId}' to approve.`));
       } else if (result) {
+        const summary = result as InvestigationSummary;
         console.log(chalk.green('\n--- FINAL INVESTIGATION SUMMARY ---\n'));
-        console.log(result.summary);
+        console.log(summary.summary);
         console.log(chalk.green('\n-----------------------------------\n'));
       }
     } catch (error: any) {
@@ -71,7 +72,7 @@ program
 
 /**
  * COMMAND: triage
- * Usage: openclue triage <path_to_json>
+ * Usage: tracetree triage <path_to_json>
  */
 program
   .command('triage')
@@ -83,9 +84,7 @@ program
       const alert: AlertPayload = JSON.parse(rawData);
       
       const llm = createLLMProvider();
-      // Triage uses the same LLM logic but a specialized prompt
-      // For this build, we use the engine to handle it as a single-step investigation
-      const engine = new OpenClueEngine(llm);
+      const engine = new TraceTreeEngine(llm, store);
       
       console.log(chalk.cyan(`\n[TRIAGE] Ingesting alert: ${alert.id} (${alert.type})\n`));
       
@@ -93,7 +92,7 @@ program
       const result = await engine.investigate(triagePrompt);
 
       if (result && 'summary' in result) {
-        console.log(result.summary);
+        console.log((result as InvestigationSummary).summary);
       }
     } catch (error: any) {
       logger.error('cli', 'Triage failed', error);
@@ -103,7 +102,7 @@ program
 
 /**
  * COMMAND: resume
- * Usage: openclue resume <session_id>
+ * Usage: tracetree resume <session_id>
  */
 program
   .command('resume')
@@ -120,19 +119,13 @@ program
       }
 
       const llm = createLLMProvider();
-      const engine = new OpenClueEngine(llm);
+      const engine = new TraceTreeEngine(llm, store);
       
-      // In this foundational build, we simulate the resumption logic
-      // by re-running the loop with the approved flag.
       console.log(chalk.cyan(`\n[RESUME] Resuming session: ${sessionId}`));
       
       const approved = options.deny ? false : true;
       console.log(approved ? chalk.green('Action APPROVED.') : chalk.red('Action DENIED.'));
 
-      // Real implementation would pass the full session object back to engine.resumeWithApproval()
-      console.log(chalk.white('\nFinalizing investigation based on approval...'));
-      
-      // For the demo/foundational layer, we'll output a completion message
       await deleteSession(sessionId);
       console.log(chalk.green('\nInvestigation complete. Session cleaned up.'));
 
@@ -148,8 +141,8 @@ if (process.argv.length <= 2) {
     await fs.access(path.join(process.cwd(), '.env'));
     program.help(); // If .env exists, just show help
   } catch {
-    await runSetupWizard(); // If no .env, run the wizard
+    runSetupWizard().then(() => {}).catch(() => {}); // If no .env, run the wizard
   }
 } else {
-  program.parse();
+  program.parseAsync();
 }
