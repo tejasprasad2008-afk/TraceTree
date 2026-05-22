@@ -72,7 +72,7 @@ export default function HITLConsole({
           <div>
             <label className="text-[9px] text-coal/40 uppercase tracking-widest block mb-1">Operational Action</label>
             <div className="text-canvas bg-coal px-4 py-3 border-l-4 border-terracotta leading-relaxed break-all">
-              {hitlRequest.toolCall.name}
+              {hitlRequest.toolCall?.name || 'Unknown Action'}
             </div>
           </div>
           
