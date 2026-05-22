@@ -21,7 +21,7 @@ export class TraceTreeEngine {
       await this.mcp.initializeClient({
         id: "tracetree-native-mcp",
         type: "stdio",
-        command: "python3",
+        command: process.env.PYTHON_PATH || "python3",
         args: ["../tracetree_mcp_server.py"]
       });
       this.mcpInitialized = true;

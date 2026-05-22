@@ -379,7 +379,13 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
         security_opt = []
         seccomp_path = Path(__file__).parent / "deny.json"
         if seccomp_path.exists():
-            security_opt.append(f"seccomp={seccomp_path.absolute()}")
+            try:
+                with open(seccomp_path, "r") as f:
+                    seccomp_content = f.read().strip()
+                # Pass raw JSON string directly to Docker API
+                security_opt.append(f"seccomp={seccomp_content}")
+            except Exception as e:
+                console.print(f"[yellow]⚠ Failed to load seccomp: {e}[/]")
 
         try:
             container = client.containers.run(

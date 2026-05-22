@@ -8,7 +8,9 @@ export type TraceEvent = {
   timestamp: string;
 };
 
-export function useTraceEvents(url: string = 'ws://localhost:3000/ws/live') {
+const defaultWsUrl = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS_URL || 'ws://localhost:3000/ws/live';
+
+export function useTraceEvents(url: string = defaultWsUrl) {
   const [events, setEvents] = useState<TraceEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);

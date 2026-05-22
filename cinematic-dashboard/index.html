@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TraceTree | Unified Command</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&family=Inter:wght@100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
+    
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+    
+    <!-- Tailwind CSS v4 -->
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
+    <style type="text/tailwindcss">
+        @theme {
+            --color-canvas: oklch(96.5% 0.01 85);
+            --color-coal: oklch(22% 0.01 70);
+            --color-terracotta: oklch(58% 0.16 35);
+            --color-peach: oklch(82% 0.12 30);
+            --color-gold: oklch(72% 0.12 85);
+            --color-sand: oklch(88% 0.02 85);
+            
+            --font-serif: "Cormorant Garamond", serif;
+            --font-sans: "Inter", sans-serif;
+            --font-mono: "JetBrains Mono", monospace;
+        }
+
+        @layer base {
+            body {
+                @apply bg-canvas text-coal font-sans selection:bg-peach/30 m-0 p-0;
+                background-image: url("https://www.transparenttextures.com/patterns/linen-free-paper.png");
+                overflow-x: hidden;
+            }
+            
+            * { box-sizing: border-box; }
+
+            h1, h2, h3, h4 { @apply font-serif; }
+        }
+
+        @layer components {
+            .section-height {
+                height: 100vh;
+                height: 100svh;
+                width: 100vw;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+            .custom-scrollbar::-webkit-scrollbar-track { @apply bg-coal/5; }
+            .custom-scrollbar::-webkit-scrollbar-thumb { @apply bg-coal/20 rounded-full; }
+
+            .text-shadow-premium {
+                text-shadow: 0 0 40px rgba(0,0,0,0.9), 0 0 80px rgba(0,0,0,0.6);
+            }
+
+            .code-block {
+                @apply bg-coal text-canvas p-8 md:p-12 font-mono text-sm md:text-base leading-relaxed shadow-2xl relative border-l-4 border-terracotta;
+            }
+            
+            .code-block::after {
+                content: 'TERMINAL PROTOCOL';
+                @apply absolute top-4 right-6 text-[10px] tracking-[0.5em] opacity-30;
+            }
+        }
+
+        .snap-container {
+            scroll-snap-type: y mandatory;
+            overflow-y: auto;
+            height: 100vh;
+            scroll-behavior: smooth;
+        }
+
+        .snap-section {
+            scroll-snap-align: start;
+            scroll-snap-stop: always;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-title {
+            font-size: clamp(2.5rem, 12vw, 14rem);
+            font-weight: 900;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            line-height: 0.8;
+            margin: 0;
+            padding: 0;
+        }
+
+        .fade-in {
+            animation: fadeIn 2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(50px); filter: blur(10px); }
+            to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+
+        .video-dimmer {
+            @apply absolute inset-0 bg-coal/55 transition-opacity duration-1000;
+        }
+
+        /* Seamless transition masks */
+        .section-mask {
+            @apply absolute inset-x-0 h-48 pointer-events-none z-10;
+        }
+        .mask-top { @apply top-0 bg-gradient-to-b from-coal/60 to-transparent; }
+        .mask-bottom { @apply bottom-0 bg-gradient-to-t from-coal/60 to-transparent; }
+
+        .paper-overlay {
+            @apply fixed inset-0 pointer-events-none z-50 opacity-20;
+            background-image: url("https://www.transparenttextures.com/patterns/linen-free-paper.png");
+        }
+
+        .neoclassical-divider {
+            @apply flex items-center gap-6 opacity-60;
+        }
+        .divider-line { @apply h-px flex-1 bg-gold/40; }
+        .divider-ornament { @apply w-3 h-3 border border-gold/40 rotate-45 flex items-center justify-center; }
+        .divider-dot { @apply w-1 h-1 bg-gold/60; }
+    </style>
+</head>
+<body>
+    <div class="paper-overlay"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const NeoclassicalDivider = ({ className }) => (
+            <div className={`neoclassical-divider ${className}`}>
+                <div className="divider-line"></div>
+                <div className="divider-ornament">
+                    <div className="divider-dot"></div>
+                </div>
+                <div className="divider-line"></div>
+            </div>
+        );
+
+        const Section = ({ videoSrc, children, dim = 0.5 }) => (
+            <section className="snap-section section-height flex flex-col items-center justify-center">
+                <div className="absolute inset-0 z-0">
+                    <video 
+                        autoPlay loop muted playsInline
+                        className="w-full h-full object-cover grayscale-[0.1] contrast-[1.1] brightness-[0.9]"
+                    >
+                        <source src={videoSrc} type="video/mp4" />
+                    </video>
+                    <div className="video-dimmer" style={{ opacity: dim }}></div>
+                    <div className="section-mask mask-top"></div>
+                    <div className="section-mask mask-bottom"></div>
+                </div>
+                <div className="relative z-20 w-full max-w-[1600px] h-full flex flex-col p-8 md:p-16">
+                    {children}
+                </div>
+            </section>
+        );
+
+        const Hero = () => (
+            <Section videoSrc="mpguf5qh-Surreal-Art-Collage.mp4" dim={0.4}>
+                <div className="flex-1 flex flex-col items-center justify-center text-center">
+                    <div className="w-full max-w-[1400px] fade-in">
+                        <h1 className="hero-title text-canvas select-none tracking-tighter text-shadow-premium">
+                            {Array.from("TRACETREE").map((l, i) => (
+                                <span key={i} style={{ animationDelay: `${i * 0.1}s` }}>{l}</span>
+                            ))}
+                        </h1>
+                    </div>
+                    <div className="mt-20 w-full max-w-4xl fade-in" style={{ animationDelay: '1s' }}>
+                        <NeoclassicalDivider className="mb-8" />
+                        <p className="text-gold font-serif italic text-2xl md:text-5xl tracking-[0.5em] uppercase text-shadow-premium leading-none">
+                            Autonomous Behavioral Forensics
+                        </p>
+                    </div>
+                </div>
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-canvas/40 animate-bounce cursor-pointer flex flex-col items-center gap-2">
+                    <span className="font-mono text-[9px] tracking-[0.4em] uppercase opacity-60">Initialize Descent</span>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.75">
+                        <path d="M7 13l5 5 5-5M7 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                </div>
+            </Section>
+        );
+
+        const ArchitectureSection = () => {
+            const legs = [
+                { id: "PLATE I", title: "Sandbox", desc: "Hardened Docker containment for suspicious execution payloads." },
+                { id: "PLATE II", title: "Syscalls", desc: "Vibration-based behavioral sensing at the kernel interface level." },
+                { id: "PLATE III", title: "Graphing", desc: "NetworkX-powered behavior cascades and process tree mapping." },
+                { id: "PLATE IV", title: "ML / AI", desc: "Random Forest heuristics identifying zero-day threat profiles." },
+                { id: "PLATE V", title: "YARA", desc: "Real-time memory DNA matching against known exploit signatures." },
+                { id: "PLATE VI", title: "MCP", desc: "Specialized orchestration shield for Model Context Protocol servers." },
+                { id: "PLATE VII", title: "Guardian", desc: "Local LLM scanner auditing agent history for sensitive leaks." },
+                { id: "PLATE VIII", title: "Temporal", desc: "Rhythm-based anomaly detection across system call intervals." }
+            ];
+
+            return (
+                <Section videoSrc="mpfxa2zl-Spider-on-Corinthian-Column.mp4" dim={0.7}>
+                    <div className="flex-1 flex flex-col justify-center gap-24 py-12">
+                        <div className="max-w-5xl border-l-2 border-terracotta pl-12">
+                            <span className="font-mono text-xs tracking-[0.7em] text-terracotta uppercase mb-4 block opacity-80">Orchestrator Architecture</span>
+                            <h2 className="text-6xl md:text-9xl text-canvas italic leading-tight text-shadow-premium">The 8 Legs of Intelligence</h2>
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-16 gap-y-20">
+                            {legs.map((leg, i) => (
+                                <div key={i} className="flex flex-col gap-4 group cursor-default">
+                                    <span className="font-mono text-[10px] text-terracotta font-bold tracking-[0.3em]">{leg.id}</span>
+                                    <h3 className="text-3xl md:text-4xl text-canvas font-serif italic tracking-wide text-shadow-premium group-hover:text-gold transition-colors duration-500">{leg.title}</h3>
+                                    <p className="text-white/80 text-xs md:text-sm font-sans leading-relaxed tracking-wide opacity-80 max-w-[280px]">{leg.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </Section>
+            );
+        };
+
+        const NervousSystemSection = () => {
+            const features = [
+                { title: "Regex Parser", desc: "Orchestrates multi-line traces into semantic behavior blocks." },
+                { title: "Syscall Intercept", desc: "High-fidelity monitoring of process, file, and network operations." },
+                { title: "Severity Weights", desc: "Weighted risk classification (0.0-9.0) for every observed action." },
+                { title: "Dynamic Flow", desc: "Live visualization of malicious cascades and data exfiltration paths." }
+            ];
+
+            return (
+                <Section videoSrc="mpgufe27-Embossed-Branding-Seal---Looping-Video.mp4" dim={0.6}>
+                    <div className="flex-1 flex flex-col justify-between py-16">
+                        <div className="text-center w-full">
+                            <span className="font-mono text-[10px] md:text-xs tracking-[0.8em] text-terracotta uppercase mb-6 block">Analysis Pipeline</span>
+                            <h2 className="text-7xl md:text-[11rem] text-canvas font-serif italic tracking-tighter leading-[0.85] text-shadow-premium">
+                                THE NERVOUS SYSTEM
+                            </h2>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16 w-full mt-auto">
+                            {features.map((f, i) => (
+                                <div key={i} className="border-t border-gold/30 pt-10 group">
+                                    <h4 className="text-gold font-serif italic text-3xl md:text-4xl mb-4 text-shadow-premium group-hover:translate-x-2 transition-transform duration-500">{f.title}</h4>
+                                    <p className="text-white/70 text-sm md:text-base font-sans leading-relaxed tracking-wide opacity-80">{f.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </Section>
+            );
+        };
+
+        const ManualSection = () => (
+            <div className="bg-canvas py-40 px-8 md:px-24 relative z-30 border-t-2 border-coal">
+                <div className="max-w-7xl mx-auto">
+                    <div className="flex flex-col lg:flex-row gap-24 items-start mb-32">
+                        <div className="lg:w-2/5">
+                            <span className="font-mono text-xs tracking-[0.7em] text-terracotta uppercase mb-6 block">Technical Manual</span>
+                            <h2 className="text-6xl md:text-8xl italic leading-[1.1] mb-12">Establish Order in the Runtime.</h2>
+                            <p className="text-coal/80 font-serif text-xl md:text-3xl leading-relaxed italic mb-12">
+                                TraceTree deployment is a rigorous protocol. Follow the sequence below to initialize the orchestrator and anchor the security organism.
+                            </p>
+                            <div className="flex flex-col gap-6 font-mono text-[10px] tracking-[0.3em] uppercase opacity-50">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-2 h-2 bg-terracotta rotate-45"></div>
+                                    <span>Version 1.0.4-LTS</span>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <div className="w-2 h-2 bg-terracotta rotate-45"></div>
+                                    <span>Distributed Security Protocol</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="lg:w-3/5 w-full space-y-24">
+                            <div>
+                                <h3 className="text-4xl font-serif italic mb-8 border-b border-coal/10 pb-6 flex items-baseline gap-6">
+                                    <span className="text-terracotta font-mono text-sm not-italic">01.</span>
+                                    <span>Initialization</span>
+                                </h3>
+                                <div className="code-block">
+                                    <div className="text-gold/40 mb-4 opacity-50 uppercase tracking-[0.2em] text-[10px]"># Clone & Deploy</div>
+                                    <pre className="whitespace-pre-wrap">{`git clone https://github.com/tracetree/unified-command.git\ncd unified-command\n\n# Configure Environment\ncp .env.example .env\nnano .env\n\n# Install Engine Dependencies\npip install -r requirements.txt`}</pre>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-4xl font-serif italic mb-8 border-b border-coal/10 pb-6 flex items-baseline gap-6">
+                                    <span className="text-terracotta font-mono text-sm not-italic">02.</span>
+                                    <span>Activation</span>
+                                </h3>
+                                <p className="text-coal/80 mb-8 font-sans text-lg tracking-wide leading-relaxed max-w-2xl">
+                                    Execute the orchestrator with administrator privileges. The engine will automatically scan the current environment, map the network topology, and initialize the behavioral graph.
+                                </p>
+                                <div className="code-block">
+                                    <div className="text-gold/40 mb-4 opacity-50 uppercase tracking-[0.2em] text-[10px]"># Start Orchestrator</div>
+                                    <pre className="whitespace-pre-wrap">{`python main.py --mode production --secure-agent`}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <NeoclassicalDivider className="mb-20 opacity-30" />
+                    
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-12 opacity-50">
+                        <div className="flex flex-col gap-2">
+                            <span className="font-mono text-[10px] tracking-[0.4em] uppercase">TRACETREE | UNIFIED COMMAND</span>
+                            <span className="font-mono text-[10px] tracking-[0.4em] uppercase">ARCHIVE PROTOCOL Nº 2026</span>
+                        </div>
+                        <div className="flex gap-16">
+                            <span className="font-serif italic text-xl">"Order from Complexity"</span>
+                            <div className="flex items-center gap-4 font-mono text-[10px] tracking-[0.4em] uppercase">
+                                <span className="w-2 h-2 bg-coal rounded-full animate-pulse"></span>
+                                SYSTEM ONLINE
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const App = () => (
+            <div className="snap-container custom-scrollbar">
+                <Hero />
+                <ArchitectureSection />
+                <NervousSystemSection />
+                <Section videoSrc="mpgs5pod-TraceTree-Static-Logo.mp4" dim={0.5}>
+                    <div className="flex-1 flex flex-col items-center justify-center text-center">
+                        <h2 className="text-8xl md:text-[13rem] text-canvas font-serif italic tracking-tighter leading-none text-shadow-premium fade-in">
+                            SECURE THE AGENT
+                        </h2>
+                        <div className="mt-16 w-full max-w-2xl fade-in" style={{ animationDelay: '0.5s' }}>
+                            <NeoclassicalDivider className="mb-10" />
+                            <p className="text-gold font-serif italic text-2xl md:text-4xl tracking-[0.6em] uppercase text-shadow-premium opacity-90">
+                                Establish Order
+                            </p>
+                        </div>
+                    </div>
+                </Section>
+                <ManualSection />
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
