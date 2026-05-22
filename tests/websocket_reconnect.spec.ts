@@ -9,6 +9,11 @@ test('WebSocket should reconnect after server restart', async ({ page }) => {
 
   // 2. Wait for initial connection
   const onlineIndicator = page.locator('text=SYSTEM ONLINE');
+  const manualSection = page.locator('section:has-text("Technical Manual")');
+
+  // Scroll to Manual Section where the indicators are located
+  await manualSection.scrollIntoViewIfNeeded();
+
   await expect(onlineIndicator).toBeVisible({ timeout: 10000 });
   console.log('Confirmed: System is ONLINE');
 

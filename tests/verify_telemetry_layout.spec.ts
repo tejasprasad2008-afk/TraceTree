@@ -6,7 +6,7 @@ const TELEMETRY_URL = `${ORCHESTRATOR_URL}/api/telemetry`;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-test('Verify Telemetry and Secure the Agent Overlay', async ({ page }) => {
+test('Verify Telemetry and Secure the Agent Overlay', async ({ page }, testInfo) => {
   // Go to the dashboard
   await page.goto('http://localhost:3001'); // Assuming frontend is on 3001
 
@@ -49,7 +49,7 @@ test('Verify Telemetry and Secure the Agent Overlay', async ({ page }) => {
   // Capture screenshot of the card with long payload
   // Scroll by index if multiple sections match or use id if available
   await page.locator('h2:has-text("SECURE THE")').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: 'secure_the_agent_long_payload.png' });
+  await page.screenshot({ path: testInfo.outputPath('secure_the_agent_long_payload.png') });
 
   // Trigger Findings
   const mockFindings = {
@@ -77,5 +77,5 @@ test('Verify Telemetry and Secure the Agent Overlay', async ({ page }) => {
   await expect(page.locator('h3:has-text("Telemetry Visualizer")')).toBeVisible();
   await expect(page.locator('span:has-text("PID: 9999")')).toBeVisible();
 
-  await page.screenshot({ path: 'nervous_system_live_telemetry.png' });
+  await page.screenshot({ path: testInfo.outputPath('nervous_system_live_telemetry.png') });
 });

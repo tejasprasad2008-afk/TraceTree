@@ -1,7 +1,5 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import uuid
