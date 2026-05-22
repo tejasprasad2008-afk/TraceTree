@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-05-21T13:50:00Z",
+  "exception_rules": [
+    {
+      "signature": "credential_theft",
+      "allowed_packages": ["awscli", "boto3", "google-cloud-sdk", "azure-cli"],
+      "heuristic": "Check if the process is a recognized cloud CLI or SDK performing standard API calls. If the binary path belongs to standard virtualenvs and the remote IP maps to official cloud metadata (169.254.169.254) or cloud endpoints (*.amazonaws.com, *.googleapis.com), it is likely benign.",
+      "severity_mitigation": -4
+    },
+    {
+      "signature": "typosquat_exfil",
+      "allowed_packages": ["pip", "npm", "yarn", "poetry"],
+      "heuristic": "Check if standard package managers read local configuration files (e.g., .npmrc or .pip.conf) and connect to official registries (registry.npmjs.org, pypi.org). If so, it is benign.",
+      "severity_mitigation": -6
+    },
+    {
+      "signature": "dns_tunneling",
+      "allowed_packages": ["dns", "dnspython", "scapy"],
+      "heuristic": "Check if the package is a dedicated network utility or DNS helper. If the process is doing high-volume resolution of normal domains, it is benign. If it utilizes subdomains encoding base64/hex data to an unknown name server, it is malicious.",
+      "severity_mitigation": -3
+    },
+    {
+      "temporal_pattern": "credential_scan_then_exfil",
+      "heuristic": "Check if a legitimate web framework (Django, Flask, FastAPI) loads a `.env` file during startup and then initiates database connections to local/private network ranges (10.x.x.x, 172.16.x.x, 192.168.x.x, localhost). If so, mitigate risk as this is standard application initialization.",
+      "severity_mitigation": -5
+    },
+    {
+      "temporal_pattern": "delayed_payload",
+      "heuristic": "Verify if the process represents a long-running daemon task (e.g., task worker, celery, redis-server, watchman). If the delayed burst matches standard event-loop callbacks or scheduled cron-like tasks, it is benign.",
+      "severity_mitigation": -4
+    }
+  ]
+}

@@ -196,7 +196,10 @@ export function createLLMProvider(): LLMProvider {
       if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is required for OpenRouter provider');
       return new OpenRouterProvider(process.env.OPENROUTER_API_KEY);
     case 'ollama':
-      return new OllamaProvider(process.env.OLLAMA_BASE_URL || 'http://localhost:11434');
+      return new OllamaProvider(
+        process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+        process.env.OLLAMA_MODEL || 'qwen2.5-coder:7b'
+      );
     case 'mock':
       return new MockProvider();
     default:

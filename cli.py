@@ -1,5 +1,11 @@
 import os
 import sys
+
+# Dynamically adjust PATH to prioritize typical macOS/Linux binary directories (e.g. Homebrew)
+for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
+    if _p not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = f"{_p}{os.pathsep}{os.environ.get('PATH', '')}"
+
 import time
 import typer
 import platform
@@ -141,29 +147,68 @@ def recursive_build_tree(tree_node: Tree, graph_json: dict, current_node_id: str
     """Recursively walks the generated graph JSON to build the Rich Tree UI."""
     edges = [e for e in graph_json.get("edges", []) if e["data"]["source"] == current_node_id]
     
+    # Resolve targets and their node types
+    resolved_edges = []
     for edge in edges:
         target_id = edge["data"]["target"]
-        label = edge["data"]["label"]
-        
-        target_node = next((n for n in graph_json["nodes"] if n["data"]["id"] == target_id), None)
-        if not target_node: continue
-        
-        node_type = target_node["data"]["type"]
-        node_label = target_node["data"]["label"]
-        
-        if node_type == "process":
-            branch_text = f"[bold magenta]{node_label}[/] [dim]({label})[/]"
-        elif node_type == "network":
-            branch_text = f"[bold red]{node_label}[/] [dim red]({label})[/]"
-        elif node_type == "file":
-            branch_text = f"[white]{node_label}[/] [dim white]({label})[/]"
-        else:
-            branch_text = f"{node_label} ({label})"
+        target_node = next((n for n in graph_json.get("nodes", []) if n["data"]["id"] == target_id), None)
+        if target_node:
+            resolved_edges.append((edge, target_node))
             
+    # Group by node type
+    processes = []
+    networks = []
+    files = []
+    others = []
+    
+    for edge, node in resolved_edges:
+        ntype = node["data"].get("type")
+        if ntype == "process":
+            processes.append((edge, node))
+        elif ntype == "network":
+            networks.append((edge, node))
+        elif ntype == "file":
+            files.append((edge, node))
+        else:
+            others.append((edge, node))
+            
+    # 1. Process processes first (structural, show all, recursively walk)
+    for edge, node in processes:
+        label = edge["data"]["label"]
+        node_label = node["data"]["label"]
+        branch_text = f"[bold magenta]{node_label}[/] [dim]({label})[/]"
         child_branch = tree_node.add(branch_text)
+        recursive_build_tree(child_branch, graph_json, node["data"]["id"])
         
-        if node_type == "process":
-            recursive_build_tree(child_branch, graph_json, target_id)
+    # 2. Process networks (limit to 5)
+    max_network = 5
+    for edge, node in networks[:max_network]:
+        label = edge["data"]["label"]
+        node_label = node["data"]["label"]
+        branch_text = f"[bold red]{node_label}[/] [dim red]({label})[/]"
+        tree_node.add(branch_text)
+    if len(networks) > max_network:
+        tree_node.add(f"[dim red]... and {len(networks) - max_network} more network connections[/]")
+        
+    # 3. Process files (limit to 5)
+    max_file = 5
+    for edge, node in files[:max_file]:
+        label = edge["data"]["label"]
+        node_label = node["data"]["label"]
+        branch_text = f"[white]{node_label}[/] [dim white]({label})[/]"
+        tree_node.add(branch_text)
+    if len(files) > max_file:
+        tree_node.add(f"[dim white]... and {len(files) - max_file} more file accesses[/]")
+        
+    # 4. Process other nodes (limit to 5)
+    max_other = 5
+    for edge, node in others[:max_other]:
+        label = edge["data"]["label"]
+        node_label = node["data"]["label"]
+        branch_text = f"{node_label} ({label})"
+        tree_node.add(branch_text)
+    if len(others) > max_other:
+        tree_node.add(f"[dim]... and {len(others) - max_other} other events[/]")
 
 
 def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
@@ -302,12 +347,30 @@ def perform_analysis(target: str, target_type: str, progress, console, workspace
 
     return is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data
 
+def send_gui_telemetry(event: str, payload: dict):
+    import urllib.request
+    import json
+    try:
+        url = "http://localhost:3000/api/telemetry"
+        data = json.dumps({"event": event, "payload": payload}).encode("utf-8")
+        req = urllib.request.Request(
+            url, 
+            data=data, 
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=2) as response:
+            pass
+    except Exception:
+        pass
+
 @app.command()
 def analyze(
     target: str = typer.Argument(..., help="Package name, bulk file, or installer"),
     type: str = typer.Option(None, "--type", "-t", help="Force 'pip', 'npm', 'dmg', 'exe', or 'bulk'"),
     url: str = typer.Option(None, "--url", "-u", help="Optional URL for private dependencies"),
     sarif: str = typer.Option(None, "--sarif", "-s", help="Output SARIF report to this file path"),
+    gui: bool = typer.Option(False, "--gui", "-g", help="Send analysis telemetry to running GUI dashboard"),
 ):
     """Run a behavioral cascade analysis on a suspicious target."""
     check_docker_preflight()
@@ -340,6 +403,17 @@ def analyze(
         sub_type = target_type
 
     for current_target in targets_to_analyze:
+        if gui:
+            send_gui_telemetry("investigation_started", {
+                "prompt": f"CLI Analysis: {current_target}",
+                "userId": "CLI"
+            })
+            send_gui_telemetry("step_started", {
+                "sessionId": "cli-session",
+                "stepId": "sandbox",
+                "name": "Sandbox Execution"
+            })
+
         with Progress(
             SpinnerColumn("dots2", style="cyan"),
             TextColumn("[progress.description]{task.description}"),
@@ -349,7 +423,31 @@ def analyze(
             is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()))
 
         if not graph_data:
+            if gui:
+                send_gui_telemetry("step_completed", {
+                    "sessionId": "cli-session",
+                    "stepId": "sandbox",
+                    "status": "failed"
+                })
+                send_gui_telemetry("investigation_completed", {
+                    "verdict": "ERROR",
+                    "confidence_score": 0.0,
+                    "durationMs": 0,
+                    "error": "Analysis failed to produce graph data"
+                })
             continue
+
+        if gui:
+            send_gui_telemetry("step_completed", {
+                "sessionId": "cli-session",
+                "stepId": "sandbox",
+                "status": "completed"
+            })
+            send_gui_telemetry("step_started", {
+                "sessionId": "cli-session",
+                "stepId": "analysis",
+                "name": "Behavioral Analysis"
+            })
 
         console.print("\n")
         console.print(Panel(
@@ -497,6 +595,44 @@ def analyze(
                 border_style="green",
                 expand=False,
             ))
+
+        if gui:
+            import json as _json_helper
+            from monitor.ngrams import detect_suspicious_ngrams
+            suspicious_ng = detect_suspicious_ngrams(ngram_data) if (ngram_data and ngram_data.get("top_ngrams")) else []
+            findings_dict = {
+                "pid": current_target,
+                "target_type": sub_type,
+                "is_malicious": is_malicious,
+                "confidence_score": confidence,
+                "total_severity": parsed_data.get("total_severity_score", 0.0),
+                "flagged_behaviors": flags,
+                "behavioral_signatures": [{
+                    "name": s["name"],
+                    "severity": s["severity"],
+                    "description": s["description"],
+                    "evidence": s["evidence"]
+                } for s in sig_matches],
+                "yara_matches": [{
+                    "rule_name": y["rule_name"],
+                    "severity": y["severity"],
+                    "description": y["description"]
+                } for y in yara_matches],
+                "suspicious_ngrams": [s["ngram"] for s in suspicious_ng],
+                "events": parsed_data.get("events", [])[:50],  # cap at 50 events
+                "network_destinations": parsed_data.get("network_destinations", [])
+            }
+            send_gui_telemetry("step_completed", {
+                "sessionId": "cli-session",
+                "stepId": "analysis",
+                "status": "completed",
+                "findings": _json_helper.dumps(findings_dict)
+            })
+            send_gui_telemetry("investigation_completed", {
+                "verdict": "MALICIOUS" if is_malicious else "CLEAN",
+                "confidence_score": confidence,
+                "durationMs": 0
+            })
 
 def train_cli():
     """CLI entrypoint dynamically executing cascade-train"""
@@ -1418,6 +1554,222 @@ install_hook_cli = typer.Typer(
 def _install_hook_cmd():
     """Install the TraceTree shell hook."""
     install_hook_cmd()
+
+
+def launch_dashboard():
+    """
+    Orchestrate and run both the API backend and the Frontend Next.js client concurrently.
+    """
+    import signal
+    import threading
+    import shutil
+    import subprocess
+    
+    project_root = Path(__file__).resolve().parent
+    frontend_dir = project_root / "frontend"
+    
+    # Pre-check npm
+    if shutil.which("npm") is None:
+        console.print(Panel(
+            "[bold red]Node.js / npm not found in PATH.[/]\n\n"
+            "TraceTree GUI Mode requires Node.js (>= 18) to be installed.\n"
+            "Please download it from [blue]https://nodejs.org[/] and try again.",
+            title="[bold red]Launch Error[/]",
+            border_style="red",
+            expand=False
+        ))
+        raise typer.Exit(1)
+
+    console.print("[cyan]Starting TraceTree Services...[/]\n")
+    
+    api_proc = None
+    frontend_proc = None
+    orch_proc = None
+    threads = []
+    
+    def cleanup(sig=None, frame=None):
+        console.print("\n[yellow]Stopping services gracefully...[/]")
+        for proc, name in [(api_proc, "API Engine"), (frontend_proc, "Frontend Client"), (orch_proc, "Orchestrator")]:
+            if proc and proc.poll() is None:
+                console.print(f"[dim]Terminating {name}...[/]")
+                try:
+                    if platform.system().lower() == "windows":
+                        proc.terminate()
+                    else:
+                        proc.send_signal(signal.SIGINT)
+                        try:
+                            proc.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                except Exception:
+                    pass
+        console.print("[green]✔ Services stopped successfully.[/]")
+        sys.exit(0)
+
+    # Register signals for graceful termination
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
+    
+    def stream_output(pipe, prefix, color):
+        try:
+            for line in iter(pipe.readline, ''):
+                if not line:
+                    break
+                line_str = line.strip()
+                if line_str:
+                    console.print(f"[{color}]{prefix}[/] {line_str}")
+        except Exception:
+            pass
+
+    try:
+        # Start API server (Uvicorn)
+        # We prefer the virtual environment's Python if it exists, to ensure uvicorn is available
+        python_exe = sys.executable
+        venv_python = project_root / "venv" / "bin" / ("python.exe" if platform.system().lower() == "windows" else "python3")
+        if venv_python.exists():
+            python_exe = str(venv_python)
+            
+        api_cmd = [python_exe, "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8000"]
+        api_proc = subprocess.Popen(
+            api_cmd,
+            env=os.environ,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        # Start Orchestrator server
+        orchestrator_dir = project_root / "orchestrator"
+        npx_path = shutil.which("npx") or "npx"
+        orch_cmd = [npx_path, "tsx", "src/server.ts"]
+        orch_env = os.environ.copy()
+        orch_env["PYTHON_PATH"] = python_exe
+        orch_proc = subprocess.Popen(
+            orch_cmd,
+            env=orch_env,
+            cwd=str(orchestrator_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        # Start Frontend server (Next.js via npm run dev on port 3001)
+        npm_path = shutil.which("npm") or "npm"
+        frontend_cmd = [npm_path, "run", "dev", "--", "-p", "3001"]
+        frontend_proc = subprocess.Popen(
+            frontend_cmd,
+            env=os.environ,
+            cwd=str(frontend_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        # Start logging threads
+        t1 = threading.Thread(target=stream_output, args=(api_proc.stdout, "API Engine  ", "#FF8C00"), daemon=True)
+        t2 = threading.Thread(target=stream_output, args=(frontend_proc.stdout, "Frontend    ", "#8A2BE2"), daemon=True)
+        t3 = threading.Thread(target=stream_output, args=(orch_proc.stdout, "Orchestrator", "#00FFFF"), daemon=True)
+        t1.start()
+        t2.start()
+        t3.start()
+        threads.extend([t1, t2, t3])
+        
+    except Exception as e:
+        console.print(f"[bold red]Failed to start processes:[/] {e}")
+        cleanup()
+        raise typer.Exit(1)
+        
+    # Wait for a brief moment to let servers initialize
+    time.sleep(3)
+    
+    # Print the beautiful URL Panel
+    url = "http://localhost:3001"
+    orch_url = "http://localhost:3000"
+    api_url = "http://127.0.0.1:8000"
+    
+    panel_content = (
+        f"[bold green]🚀 TraceTree Dashboard is active![/]\n\n"
+        f"  [bold]Web Client (GUI):[/]  [underline cyan]{url}[/]\n"
+        f"  [bold]Orchestrator WS:[/]   [underline cyan]{orch_url}[/]\n"
+        f"  [bold]API Gateway:[/]       [underline cyan]{api_url}[/]\n\n"
+        f"[dim]Press Ctrl+C to stop all services and return to shell.[/]"
+    )
+    console.print(Panel(panel_content, border_style="bold green", expand=False))
+    
+    # Spawn the interactive prompt thread in the background
+    def prompt_loop():
+        # Give some time for startup logs to settle
+        time.sleep(2)
+        while True:
+            try:
+                target = console.input("\n[bold yellow]Enter target path/package to analyze (or press Ctrl+C to exit): [/]")
+                target = target.strip()
+                if not target:
+                    continue
+                console.print(f"[cyan]Spawning scan for [bold]{target}[/] in GUI mode...[/]")
+                
+                python_exe = sys.executable
+                venv_python = project_root / "venv" / "bin" / ("python.exe" if platform.system().lower() == "windows" else "python3")
+                if venv_python.exists():
+                    python_exe = str(venv_python)
+                
+                # Spawn a background process running 'python3 cli.py analyze <target> --gui'
+                subprocess.Popen(
+                    [python_exe, "cli.py", "analyze", target, "--gui"],
+                    env=os.environ,
+                    cwd=str(project_root)
+                )
+            except (KeyboardInterrupt, SystemExit):
+                break
+            except EOFError:
+                # Stdin is not active/available (e.g. running in background task)
+                time.sleep(10)
+                continue
+            except Exception as e:
+                console.print(f"[bold red]Prompt thread error: {e}[/]")
+                break
+
+    prompt_thread = threading.Thread(target=prompt_loop, daemon=True)
+    prompt_thread.start()
+
+    # Keep the main thread alive and monitor processes
+    try:
+        while True:
+            # Check if any process crashed
+            if api_proc.poll() is not None:
+                console.print("[bold red]❌ API Engine stopped unexpectedly.[/]")
+                break
+            if frontend_proc.poll() is not None:
+                console.print("[bold red]❌ Frontend Client stopped unexpectedly.[/]")
+                break
+            if orch_proc.poll() is not None:
+                console.print("[bold red]❌ Orchestrator stopped unexpectedly.[/]")
+                break
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cleanup()
+
+
+@app.command(name="dashboard")
+def dashboard_cmd():
+    """Launch the TraceTree API engine and frontend web dashboard concurrently."""
+    launch_dashboard()
+
+
+dashboard_cli = typer.Typer(
+    name="cascade-dashboard",
+    help="Unified dashboard launcher for the database API engine and frontend.",
+)
+
+@dashboard_cli.command()
+def _dashboard_cmd():
+    """Unified dashboard launcher for the database API engine and frontend."""
+    launch_dashboard()
 
 
 if __name__ == "__main__":

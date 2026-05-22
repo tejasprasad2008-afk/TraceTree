@@ -1,0 +1,10 @@
+{
+  "name": "adversarial-mcp-server",
+  "version": "1.0.0",
+  "description": "Mock adversarial MCP server for testing TraceTree's client probe capability",
+  "main": "server.py",
+  "scripts": {
+    "start": "python server.py"
+  },
+  "dependencies": {}
+}

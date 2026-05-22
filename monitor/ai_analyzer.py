@@ -10,6 +10,12 @@ import logging
 import requests
 import os
 from pathlib import Path
+
+# Dynamically adjust PATH to prioritize typical macOS/Linux binary directories (e.g. Homebrew)
+for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
+    if _p not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = f"{_p}{os.pathsep}{os.environ.get('PATH', '')}"
+
 from typing import Dict, Any, Optional, List
 
 log = logging.getLogger(__name__)
@@ -75,6 +81,7 @@ def ensure_ollama_and_model() -> bool:
     """
     import subprocess
     import platform
+    import shutil
     from rich.prompt import Confirm
     from rich.console import Console
 
@@ -82,15 +89,22 @@ def ensure_ollama_and_model() -> bool:
     console = Console()
 
     # 1. Check if Ollama is installed
-    if not is_ollama_installed():
+    ollama_path = shutil.which("ollama")
+    if ollama_path is None:
         console.print("[bold yellow]⚠ Ollama is not installed.[/] Ollama is required for local AI security audits.")
         if Confirm.ask("Would you like to install Ollama now? (macOS requires Homebrew)"):
             sys_os = platform.system().lower()
             if sys_os == "darwin":
+                brew_path = shutil.which("brew")
+                if brew_path is None:
+                    console.print("[bold red]Error:[/] Homebrew ('brew') was not found in your PATH.")
+                    console.print("Please install Ollama manually from: [blue]https://ollama.com[/]")
+                    return False
                 try:
-                    console.print("[cyan]Running: brew install ollama...[/]")
-                    subprocess.run(["brew", "install", "ollama"], check=True)
+                    console.print(f"[cyan]Running: {brew_path} install ollama...[/]")
+                    subprocess.run([brew_path, "install", "ollama"], env=os.environ, check=True)
                     console.print("[bold green]✔ Ollama installed successfully![/]")
+                    ollama_path = shutil.which("ollama") or "/opt/homebrew/bin/ollama"
                 except Exception as e:
                     console.print(f"[bold red]Installation failed:[/] {e}. Please install manually from https://ollama.com")
                     return False
@@ -106,7 +120,7 @@ def ensure_ollama_and_model() -> bool:
         if Confirm.ask("Would you like to start Ollama now?"):
             try:
                 # Start in background
-                subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen([ollama_path, "serve"], env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 import time
                 console.print("[cyan]Waiting for Ollama to wake up...[/]")
                 for _ in range(10):
@@ -127,7 +141,7 @@ def ensure_ollama_and_model() -> bool:
                 console.print(f"[cyan]Pulling {MODEL_NAME}... this may take a few minutes depending on your internet speed.[/]")
                 # We use subprocess to show progress bar from ollama itself if possible, 
                 # or we could use requests stream. Subprocess is cleaner for UX.
-                subprocess.run(["ollama", "pull", MODEL_NAME], check=True)
+                subprocess.run([ollama_path, "pull", MODEL_NAME], env=os.environ, check=True)
                 console.print(f"[bold green]✔ Model {MODEL_NAME} is ready![/]")
             else:
                 return False

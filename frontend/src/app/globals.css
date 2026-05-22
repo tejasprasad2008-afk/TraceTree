@@ -1,39 +1,176 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&family=Inter:wght@100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@100..900&display=swap');
 @import "tailwindcss";
 
-:root {
-  --background: #000000;
-  --foreground: #ffffff;
+@theme {
+  --color-canvas: oklch(96.5% 0.01 85);
+  --color-coal: oklch(22% 0.01 70);
+  --color-terracotta: oklch(58% 0.16 35);
+  --color-peach: oklch(82% 0.12 30);
+  --color-gold: oklch(72% 0.12 85);
+  --color-sand: oklch(88% 0.02 85);
+
+  --font-serif: "Cormorant Garamond", serif;
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer base {
+  body {
+    @apply bg-canvas text-coal font-sans selection:bg-peach/30 m-0 p-0;
+    background-image: url("https://www.transparenttextures.com/patterns/linen-free-paper.png");
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-serif;
+  }
 }
 
-/* Custom Scrollbar for Dark Mode Terminal Look */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Custom Scrollbar for Ledger Look */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
 }
 
-::-webkit-scrollbar-track {
-  background: #000;
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(29, 27, 24, 0.05);
 }
 
-::-webkit-scrollbar-thumb {
-  background: #1f2937;
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(29, 27, 24, 0.2);
   border-radius: 10px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(29, 27, 24, 0.4);
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* Dark Custom Scrollbar for Glassmorphic Widgets */
+.custom-scrollbar-dark::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar-dark::-webkit-scrollbar-track {
+  background: rgba(245, 242, 235, 0.05);
+}
+
+.custom-scrollbar-dark::-webkit-scrollbar-thumb {
+  background: rgba(245, 242, 235, 0.2);
+  border-radius: 10px;
+}
+
+.custom-scrollbar-dark::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 242, 235, 0.4);
+}
+
+/* Cinematic Layout Styles */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.section-height {
+  height: 100vh;
+  height: 100svh;
+  width: 100%;
+}
+
+.snap-container {
+  scroll-snap-type: y mandatory;
+  overflow-y: auto;
+  height: 100vh;
+  scroll-behavior: smooth;
+  width: 100%;
+}
+
+.snap-section {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+
+.hero-title {
+  font-size: clamp(2.5rem, 12vw, 14rem);
+  font-weight: 900;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  line-height: 0.8;
+  margin: 0;
+  padding: 0;
+}
+
+.fade-in {
+  animation: fadeIn 2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(50px);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
   }
 }
+
+.video-dimmer {
+  @apply absolute inset-0 bg-coal/55 transition-opacity duration-1000;
+}
+
+/* Seamless transition masks */
+.section-mask {
+  @apply absolute inset-x-0 h-48 pointer-events-none z-10;
+}
+.mask-top {
+  @apply top-0 bg-gradient-to-b from-coal/60 to-transparent;
+}
+.mask-bottom {
+  @apply bottom-0 bg-gradient-to-t from-coal/60 to-transparent;
+}
+
+.paper-overlay {
+  @apply fixed inset-0 pointer-events-none z-50 opacity-20;
+  background-image: url("https://www.transparenttextures.com/patterns/linen-free-paper.png");
+}
+
+/* Neoclassical elements */
+.text-shadow-premium {
+  text-shadow: 0 0 40px rgba(0,0,0,0.9), 0 0 80px rgba(0,0,0,0.6);
+}
+
+.code-block {
+  @apply bg-coal text-canvas p-8 md:p-12 font-mono text-sm md:text-base leading-relaxed shadow-2xl relative border-l-4 border-terracotta;
+}
+
+.code-block::after {
+  content: 'TERMINAL PROTOCOL';
+  @apply absolute top-4 right-6 text-[10px] tracking-[0.5em] opacity-30;
+}
+
+.neoclassical-divider {
+  @apply flex items-center gap-6 opacity-60;
+}
+
+.divider-line {
+  @apply h-px flex-1 bg-gold/40;
+}
+
+.divider-ornament {
+  @apply w-3 h-3 border border-gold/40 rotate-45 flex items-center justify-center;
+}
+
+.divider-dot {
+  @apply w-1 h-1 bg-gold/60;
+}
+

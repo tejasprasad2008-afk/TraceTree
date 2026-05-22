@@ -1,0 +1,5 @@
+package_name,is_malicious,log_path,feature_0,feature_1,feature_2,feature_3,feature_4
+forcememo_payload_obfuscated,1,/Users/tejasprasad/TraceTree/logs/forcememo_payload_obfuscated_pip_strace.log,4.0,1.0,1.0,0.0,13.0
+forcememo_decoded,1,/Users/tejasprasad/TraceTree/logs/forcememo_decoded_pip_strace.log,4.0,1.0,1.0,0.0,13.0
+0-0,0,/Users/tejasprasad/TraceTree/logs/0-0_pip_strace.log,4.0,1.0,1.0,0.0,13.0
+000,0,/Users/tejasprasad/TraceTree/logs/000_pip_strace.log,4.0,1.0,1.0,0.0,13.0
