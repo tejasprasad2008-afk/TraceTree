@@ -267,7 +267,7 @@ const SecureAgentSection = ({ events }: { events: any[] }) => {
 };
 
 // Technical Manual Section (cream background)
-const ManualSection = () => (
+const ManualSection = ({ isConnected }: { isConnected: boolean }) => (
   <section className="snap-section bg-canvas py-20 md:py-40 px-6 md:px-24 relative z-30 border-t-2 border-coal">
     <div className="max-w-7xl mx-auto">
       <div className="flex flex-col lg:flex-row gap-16 md:gap-24 items-start mb-20 md:mb-32">
@@ -325,8 +325,8 @@ const ManualSection = () => (
         <div className="flex gap-8 md:gap-16">
           <span className="font-serif italic text-lg md:text-xl">"Order from Complexity"</span>
           <div className="flex items-center gap-4 font-mono text-[9px] md:text-[10px] tracking-[0.4em] uppercase">
-            <span className="w-2 h-2 bg-coal rounded-full animate-pulse"></span>
-            SYSTEM ONLINE
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-coal animate-pulse' : 'bg-terracotta'}`}></span>
+            {isConnected ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE'}
           </div>
         </div>
       </div>
@@ -415,7 +415,7 @@ export default function Dashboard() {
         aiSummaryText={aiSummaryText}
       />
       <SecureAgentSection events={events} />
-      <ManualSection />
+      <ManualSection isConnected={isConnected} />
 
       {/* HITL Modal */}
       <HITLConsole 

@@ -1,7 +1,5 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import uuid
@@ -181,20 +179,5 @@ async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
 
 @app.get("/")
 async def root():
-    """Redirect root access to the dashboard."""
-    return RedirectResponse(url="/app/")
-
-# Mount the frontend directory to serve static UI files under /app path
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.isdir(frontend_path):
-    app.mount("/app", StaticFiles(directory=frontend_path, html=True), name="frontend")
-
-@app.get("/")
-async def root():
-    """Redirect root access to the dashboard."""
-    return RedirectResponse(url="/app/")
-
-# Mount the frontend directory to serve static UI files under /app path
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.isdir(frontend_path):
-    app.mount("/app", StaticFiles(directory=frontend_path, html=True), name="frontend")
+    """Return API health status."""
+    return {"status": "TraceTree API is active", "version": "1.0.0"}
