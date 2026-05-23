@@ -146,11 +146,10 @@ def get_ml_model(version: str = None):
             "from 'cascade-analyzer-models'...[/]"
         )
         try:
-            client = storage.Client.create_anonymous_client()
-            bucket = client.bucket("cascade-analyzer-models")
-            blob = bucket.blob("model.pkl")
+            import urllib.request
+            url = "https://storage.googleapis.com/cascade-analyzer-models/model.pkl"
             model_path.parent.mkdir(exist_ok=True)
-            blob.download_to_filename(str(model_path))
+            urllib.request.urlretrieve(url, str(model_path))
             console.print("[bold green]✔ Synced model from GCS.[/]")
         except Exception as e:
             console.print(f"[bold yellow]⚠ GCS download skipped:[/] {e}")
@@ -175,11 +174,10 @@ def update_model_from_gcs():
     model_path = Path(__file__).parent / "model.pkl"
     try:
         console.print("[cyan]Fetching latest model from GCS...[/]")
-        client = storage.Client.create_anonymous_client()
-        bucket = client.bucket("cascade-analyzer-models")
-        blob = bucket.blob("model.pkl")
+        import urllib.request
+        url = "https://storage.googleapis.com/cascade-analyzer-models/model.pkl"
         model_path.parent.mkdir(exist_ok=True)
-        blob.download_to_filename(str(model_path))
+        urllib.request.urlretrieve(url, str(model_path))
         clear_model_cache()
         console.print("[bold green]✔ Model updated from GCS.[/]")
     except Exception as e:
