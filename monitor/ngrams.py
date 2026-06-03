@@ -15,8 +15,7 @@ Usage:
 
 import logging
 from collections import Counter
-from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List
 
 log = logging.getLogger(__name__)
 

@@ -11,11 +11,6 @@ Usage:
 """
 
 import argparse
-import asyncio
-import json
-import random
-import sys
-import time
 from pathlib import Path
 
 # Top 200 most popular PyPI packages (by weekly downloads) - these are known safe

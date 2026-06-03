@@ -23,9 +23,6 @@ try:
 except ImportError:
     docker = None
 
-from rich.columns import Columns
-from rich.layout import Layout
-from rich.style import Style
 from sandbox.sandbox import run_sandbox
 
 app = typer.Typer(help="TraceTree Security Analyzer")
@@ -1154,7 +1151,6 @@ def check(
     """
     check_docker_preflight()
 
-    from watcher.session import SessionWatcher
     from mascot.spider import SpiderMascot
 
     spider = SpiderMascot()

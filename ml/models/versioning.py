@@ -142,7 +142,6 @@ def add_model_version_flags(parser):
 # Standalone entry point
 if __name__ == "__main__":
     import argparse
-    import sys
     
     parser = argparse.ArgumentParser(description="Model version manager")
     subparsers = parser.add_subparsers(dest="command")

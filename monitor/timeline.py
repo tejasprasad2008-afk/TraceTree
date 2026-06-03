@@ -11,7 +11,7 @@ Usage:
     # Returns list of detected temporal patterns with evidence
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 # --------------------------------------------------------------------------- #
 #  Temporal pattern definitions
