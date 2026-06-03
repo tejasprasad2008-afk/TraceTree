@@ -15,6 +15,8 @@ Usage:
 """
 
 import logging
+from typing import Dict, Any, List, Optional
+from monitor.utils import is_sensitive_path
 from typing import Dict, Any, List
 
 log = logging.getLogger(__name__)
@@ -226,13 +228,7 @@ def _extract_file_accesses(events: List[Dict[str, Any]]) -> set:
 
 def _is_sensitive_file(path: str) -> bool:
     """Check if a file path is considered sensitive."""
-    sensitive = [
-        "/etc/shadow", "/etc/passwd", ".aws/", ".ssh/",
-        ".npmrc", ".pypirc", ".env", ".git-credentials",
-        "/proc/self/environ", "/root/.bash_history",
-        "/var/run/secrets",
-    ]
-    return any(p in path for p in sensitive)
+    return is_sensitive_path(path)
 
 
 def _compute_verdict(
