@@ -15,7 +15,7 @@ Usage:
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 log = logging.getLogger(__name__)
 

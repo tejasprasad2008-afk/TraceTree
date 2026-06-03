@@ -1,5 +1,4 @@
 import os
-import shlex
 import time
 import tarfile
 import tempfile
