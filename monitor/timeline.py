@@ -13,6 +13,7 @@ Usage:
 
 from typing import List, Dict, Any, Optional
 from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
+from typing import List, Dict, Any
 
 # --------------------------------------------------------------------------- #
 #  Temporal pattern definitions

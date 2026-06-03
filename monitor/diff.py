@@ -17,6 +17,7 @@ Usage:
 import logging
 from typing import Dict, Any, List, Optional
 from monitor.utils import is_sensitive_path
+from typing import Dict, Any, List
 
 log = logging.getLogger(__name__)
 

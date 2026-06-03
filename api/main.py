@@ -157,7 +157,6 @@ async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
         internal_graph = mock_db[analysis_id]["graph"]
         # ... logic to convert to GraphVisualizationResponse ...
         # For now, returning mock to avoid breakages
-        pass
         
     package_name = mock_db[analysis_id]["package_name"]
     
