@@ -12,6 +12,7 @@ Usage:
 """
 
 from typing import List, Dict, Any, Optional
+from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
 
 # --------------------------------------------------------------------------- #
 #  Temporal pattern definitions
@@ -28,39 +29,9 @@ from typing import List, Dict, Any, Optional
 #    - evidence_events: list of event dicts that triggered the match
 # --------------------------------------------------------------------------- #
 
-# Sensitive file patterns (same as in parser.py, duplicated to avoid circular import)
-_SENSITIVE_FILE_PATTERNS = [
-    "/etc/shadow", "/etc/passwd", ".aws/credentials", ".ssh/id_rsa",
-    ".ssh/id_ed25519", ".npmrc", ".pypirc", ".env", ".git-credentials",
-    "/proc/self/environ", "/root/.bash_history", "/var/run/secrets",
-]
-
-# Known-safe network destinations (PyPI, npm, GitHub CDN — these don't count as "external")
-_KNOWN_SAFE_PREFIXES = (
-    "151.101.", "104.16.", "104.17.", "52.85.", "54.230.",
-    "13.107.", "52.96.", "40.79.", "140.82.121.", "140.82.112.",
-    "185.199.108.", "185.199.109.", "185.199.110.", "185.199.111.",
-    "199.232.", "99.84.", "99.86.", "13.224.", "13.225.",
-    "13.226.", "13.227.", "3.160.", "3.162.", "3.164.", "3.165.",
-    "3.166.", "3.167.", "3.168.", "205.251.", "13.249.",
-)
-
-# Benign binaries (same as parser)
-_BENIGN_BINARIES = frozenset([
-    "/usr/local/bin/pip", "/usr/bin/pip",
-    "/usr/local/bin/python", "/usr/bin/python",
-    "/usr/local/bin/python3", "/usr/bin/python3",
-    "/usr/bin/sh", "/usr/local/bin/sh",
-    "/bin/sh", "/bin/bash",
-    "/usr/local/bin/npm", "/usr/bin/npm",
-    "/usr/local/bin/node", "/usr/bin/node",
-    "/usr/bin/ip", "/sbin/ip",
-])
-
-
 def _is_sensitive_file(target: str) -> bool:
     """Check if a file path is sensitive."""
-    return any(pat in target for pat in _SENSITIVE_FILE_PATTERNS)
+    return is_sensitive_path(target)
 
 
 def _is_external_connect(event: Dict[str, Any]) -> bool:
@@ -69,7 +40,7 @@ def _is_external_connect(event: Dict[str, Any]) -> bool:
         return False
     target = event.get("target", "")
     ip = target.split(":")[0] if ":" in target else target
-    return not any(ip.startswith(p) for p in _KNOWN_SAFE_PREFIXES)
+    return not any(ip.startswith(p) for p in KNOWN_SAFE_NETWORKS)
 
 
 def _is_shell_execve(target: str) -> bool:
