@@ -11,9 +11,9 @@ Usage:
     # Returns list of detected temporal patterns with evidence
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List
+
 from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
-from typing import List, Dict, Any
 
 # --------------------------------------------------------------------------- #
 #  Temporal pattern definitions
@@ -29,6 +29,7 @@ from typing import List, Dict, Any
 #    - time_window_ms: duration of the pattern
 #    - evidence_events: list of event dicts that triggered the match
 # --------------------------------------------------------------------------- #
+
 
 def _is_sensitive_file(target: str) -> bool:
     """Check if a file path is sensitive."""
@@ -46,13 +47,19 @@ def _is_external_connect(event: Dict[str, Any]) -> bool:
 
 def _is_shell_execve(target: str) -> bool:
     """Check if an execve target is a shell binary."""
-    return target in ("/bin/sh", "/bin/bash", "/bin/zsh", "/bin/dash",
-                       "/usr/bin/sh", "/usr/bin/bash")
+    return target in (
+        "/bin/sh",
+        "/bin/bash",
+        "/bin/zsh",
+        "/bin/dash",
+        "/usr/bin/sh",
+        "/usr/bin/bash",
+    )
 
 
 def _is_non_standard_execve(target: str) -> bool:
     """Check if an execve target is NOT a known benign binary."""
-    return target not in _BENIGN_BINARIES
+    return target not in BENIGN_BINARIES
 
 
 def _format_time_window(start_ms: float, end_ms: float) -> str:
@@ -69,7 +76,9 @@ def _format_time_window(start_ms: float, end_ms: float) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def _check_credential_scan_then_exfil(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _check_credential_scan_then_exfil(
+    events: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
     """
     Detect: openat on sensitive file → connect external within 5 seconds.
     This is the classic credential theft pattern: read secrets, then exfiltrate.
@@ -85,19 +94,23 @@ def _check_credential_scan_then_exfil(events: List[Dict[str, Any]]) -> List[Dict
 
         # Look for a connect to external destination within the time window
         read_time = e_read.get("relative_ms", 0.0)
-        for e_conn in events[i + 1:]:
+        for e_conn in events[i + 1 :]:
             if e_conn.get("relative_ms", 0.0) - read_time > window_ms:
                 break  # Past the window
             if _is_external_connect(e_conn):
-                matches.append({
-                    "pattern_name": "credential_scan_then_exfil",
-                    "severity": 9,
-                    "description": "Sensitive file read followed by external connection within 5s",
-                    "start_time_ms": round(read_time, 2),
-                    "end_time_ms": round(e_conn.get("relative_ms", 0.0), 2),
-                    "time_window_ms": round(e_conn.get("relative_ms", 0.0) - read_time, 2),
-                    "evidence_events": [e_read, e_conn],
-                })
+                matches.append(
+                    {
+                        "pattern_name": "credential_scan_then_exfil",
+                        "severity": 9,
+                        "description": "Sensitive file read followed by external connection within 5s",
+                        "start_time_ms": round(read_time, 2),
+                        "end_time_ms": round(e_conn.get("relative_ms", 0.0), 2),
+                        "time_window_ms": round(
+                            e_conn.get("relative_ms", 0.0) - read_time, 2
+                        ),
+                        "evidence_events": [e_read, e_conn],
+                    }
+                )
                 break  # One match per read event
 
     return matches
@@ -120,22 +133,29 @@ def _check_rapid_file_enumeration(events: List[Dict[str, Any]]) -> List[Dict[str
     for i, start_evt in enumerate(openat_events):
         start_time = start_evt.get("relative_ms", 0.0)
         window_events = [start_evt]
-        for e in openat_events[i + 1:]:
+        for e in openat_events[i + 1 :]:
             if e.get("relative_ms", 0.0) - start_time > window_ms:
                 break
             window_events.append(e)
 
         if len(window_events) >= threshold:
             end_time = window_events[-1].get("relative_ms", 0.0)
-            matches.append({
-                "pattern_name": "rapid_file_enumeration",
-                "severity": 7,
-                "description": f"{len(window_events)} file accesses within 1 second (scanning behavior)",
-                "start_time_ms": round(start_time, 2),
-                "end_time_ms": round(end_time, 2),
-                "time_window_ms": round(end_time - start_time, 2),
-                "evidence_events": window_events[:5] + [{"_summary": f"... and {len(window_events) - 5} more"}] if len(window_events) > 5 else window_events,
-            })
+            matches.append(
+                {
+                    "pattern_name": "rapid_file_enumeration",
+                    "severity": 7,
+                    "description": f"{len(window_events)} file accesses within 1 second (scanning behavior)",
+                    "start_time_ms": round(start_time, 2),
+                    "end_time_ms": round(end_time, 2),
+                    "time_window_ms": round(end_time - start_time, 2),
+                    "evidence_events": (
+                        window_events[:5]
+                        + [{"_summary": f"... and {len(window_events) - 5} more"}]
+                        if len(window_events) > 5
+                        else window_events
+                    ),
+                }
+            )
             break  # One match is enough
 
     return matches
@@ -150,29 +170,33 @@ def _check_burst_process_spawn(events: List[Dict[str, Any]]) -> List[Dict[str, A
     window_ms = 2000.0
     threshold = 5
 
-    spawn_events = [e for e in events if e["type"] in ("clone", "fork", "vfork", "execve")]
+    spawn_events = [
+        e for e in events if e["type"] in ("clone", "fork", "vfork", "execve")
+    ]
     if len(spawn_events) < threshold:
         return matches
 
     for i, start_evt in enumerate(spawn_events):
         start_time = start_evt.get("relative_ms", 0.0)
         window_events = [start_evt]
-        for e in spawn_events[i + 1:]:
+        for e in spawn_events[i + 1 :]:
             if e.get("relative_ms", 0.0) - start_time > window_ms:
                 break
             window_events.append(e)
 
         if len(window_events) >= threshold:
             end_time = window_events[-1].get("relative_ms", 0.0)
-            matches.append({
-                "pattern_name": "burst_process_spawn",
-                "severity": 7,
-                "description": f"{len(window_events)} process spawns within 2 seconds",
-                "start_time_ms": round(start_time, 2),
-                "end_time_ms": round(end_time, 2),
-                "time_window_ms": round(end_time - start_time, 2),
-                "evidence_events": window_events,
-            })
+            matches.append(
+                {
+                    "pattern_name": "burst_process_spawn",
+                    "severity": 7,
+                    "description": f"{len(window_events)} process spawns within 2 seconds",
+                    "start_time_ms": round(start_time, 2),
+                    "end_time_ms": round(end_time, 2),
+                    "time_window_ms": round(end_time - start_time, 2),
+                    "evidence_events": window_events,
+                }
+            )
             break
 
     return matches
@@ -207,16 +231,22 @@ def _check_delayed_payload(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                     burst_events.append(e)
 
             if suspicious_count >= 2:
-                end_time = burst_events[-1].get("relative_ms", 0.0) if burst_events else curr_time
-                matches.append({
-                    "pattern_name": "delayed_payload",
-                    "severity": 8,
-                    "description": f"{suspicious_count} suspicious events after {gap / 1000:.1f}s gap (dropper behavior)",
-                    "start_time_ms": round(prev_time, 2),
-                    "end_time_ms": round(end_time, 2),
-                    "time_window_ms": round(gap + (end_time - curr_time), 2),
-                    "evidence_events": [events[i - 1]] + burst_events[:5],
-                })
+                end_time = (
+                    burst_events[-1].get("relative_ms", 0.0)
+                    if burst_events
+                    else curr_time
+                )
+                matches.append(
+                    {
+                        "pattern_name": "delayed_payload",
+                        "severity": 8,
+                        "description": f"{suspicious_count} suspicious events after {gap / 1000:.1f}s gap (dropper behavior)",
+                        "start_time_ms": round(prev_time, 2),
+                        "end_time_ms": round(end_time, 2),
+                        "time_window_ms": round(gap + (end_time - curr_time), 2),
+                        "evidence_events": [events[i - 1]] + burst_events[:5],
+                    }
+                )
                 break  # One match is enough
 
     return matches
@@ -235,19 +265,25 @@ def _check_connect_then_shell(events: List[Dict[str, Any]]) -> List[Dict[str, An
             continue
 
         conn_time = e_conn.get("relative_ms", 0.0)
-        for e_exec in events[i + 1:]:
+        for e_exec in events[i + 1 :]:
             if e_exec.get("relative_ms", 0.0) - conn_time > window_ms:
                 break
-            if e_exec["type"] == "execve" and _is_shell_execve(e_exec.get("target", "")):
-                matches.append({
-                    "pattern_name": "connect_then_shell",
-                    "severity": 10,
-                    "description": "External connection followed by shell execution within 3s",
-                    "start_time_ms": round(conn_time, 2),
-                    "end_time_ms": round(e_exec.get("relative_ms", 0.0), 2),
-                    "time_window_ms": round(e_exec.get("relative_ms", 0.0) - conn_time, 2),
-                    "evidence_events": [e_conn, e_exec],
-                })
+            if e_exec["type"] == "execve" and _is_shell_execve(
+                e_exec.get("target", "")
+            ):
+                matches.append(
+                    {
+                        "pattern_name": "connect_then_shell",
+                        "severity": 10,
+                        "description": "External connection followed by shell execution within 3s",
+                        "start_time_ms": round(conn_time, 2),
+                        "end_time_ms": round(e_exec.get("relative_ms", 0.0), 2),
+                        "time_window_ms": round(
+                            e_exec.get("relative_ms", 0.0) - conn_time, 2
+                        ),
+                        "evidence_events": [e_conn, e_exec],
+                    }
+                )
                 break
 
     return matches
@@ -259,11 +295,11 @@ def _check_connect_then_shell(events: List[Dict[str, Any]]) -> List[Dict[str, An
 
 # All pattern checkers in order of severity (highest first)
 _PATTERN_CHECKERS = [
-    _check_connect_then_shell,          # severity 10
-    _check_credential_scan_then_exfil,   # severity 9
-    _check_delayed_payload,              # severity 8
-    _check_rapid_file_enumeration,       # severity 7
-    _check_burst_process_spawn,          # severity 7
+    _check_connect_then_shell,  # severity 10
+    _check_credential_scan_then_exfil,  # severity 9
+    _check_delayed_payload,  # severity 8
+    _check_rapid_file_enumeration,  # severity 7
+    _check_burst_process_spawn,  # severity 7
 ]
 
 
