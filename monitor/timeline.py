@@ -11,6 +11,9 @@ Usage:
     # Returns list of detected temporal patterns with evidence
 """
 
+from typing import Any, Dict, List
+
+from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
 from typing import List, Dict, Any
 from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
 from monitor.utils import KNOWN_SAFE_NETWORKS, is_sensitive_path

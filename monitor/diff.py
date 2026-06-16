@@ -15,9 +15,9 @@ Usage:
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List
+
 from monitor.utils import is_sensitive_path
-from typing import Dict, Any, List
 
 log = logging.getLogger(__name__)
 
@@ -92,11 +92,15 @@ def diff_analysis(
     }
 
     if added_syscalls:
-        details.append(f"[bold]{label_b}[/] introduces {len(added_syscalls)} new syscall type(s): "
-                       f"{', '.join(added_syscalls.keys())}")
+        details.append(
+            f"[bold]{label_b}[/] introduces {len(added_syscalls)} new syscall type(s): "
+            f"{', '.join(added_syscalls.keys())}"
+        )
     if removed_syscalls:
-        details.append(f"[bold]{label_b}[/] removes {len(removed_syscalls)} syscall type(s) "
-                       f"present in [bold]{label_a}[/]")
+        details.append(
+            f"[bold]{label_b}[/] removes {len(removed_syscalls)} syscall type(s) "
+            f"present in [bold]{label_a}[/]"
+        )
 
     # --- Network destination diff ---
     net_a = _extract_network_destinations(events_a)
@@ -108,8 +112,10 @@ def diff_analysis(
         "removed": sorted(net_removed),
     }
     if net_added:
-        details.append(f"[bold]{label_b}[/] connects to {len(net_added)} new destination(s): "
-                       f"{', '.join(sorted(net_added)[:5])}")
+        details.append(
+            f"[bold]{label_b}[/] connects to {len(net_added)} new destination(s): "
+            f"{', '.join(sorted(net_added)[:5])}"
+        )
 
     # --- File access diff ---
     files_a = _extract_file_accesses(events_a)
@@ -123,8 +129,10 @@ def diff_analysis(
     if files_added:
         sensitive_added = [f for f in files_added if _is_sensitive_file(f)]
         if sensitive_added:
-            details.append(f"[bold red]⚠[/] [bold]{label_b}[/] accesses {len(sensitive_added)} "
-                           f"new sensitive file(s): {', '.join(sorted(sensitive_added)[:5])}")
+            details.append(
+                f"[bold red]⚠[/] [bold]{label_b}[/] accesses {len(sensitive_added)} "
+                f"new sensitive file(s): {', '.join(sorted(sensitive_added)[:5])}"
+            )
 
     # --- Signature diff ---
     sig_names_a = {s["name"] for s in sigs_a}
@@ -134,9 +142,11 @@ def diff_analysis(
         "only_in_b": sorted(sig_names_b - sig_names_a),
     }
     if sig_diff["only_in_b"]:
-        details.append(f"[bold red]⚠[/] [bold]{label_b}[/] triggers {len(sig_diff['only_in_b'])} "
-                       f"signature(s) not seen in [bold]{label_a}[/]: "
-                       f"{', '.join(sig_diff['only_in_b'][:5])}")
+        details.append(
+            f"[bold red]⚠[/] [bold]{label_b}[/] triggers {len(sig_diff['only_in_b'])} "
+            f"signature(s) not seen in [bold]{label_a}[/]: "
+            f"{', '.join(sig_diff['only_in_b'][:5])}"
+        )
 
     # --- Severity diff ---
     stats_a = graph_a.get("stats", {})
@@ -149,14 +159,17 @@ def diff_analysis(
     }
     total_delta = severity_diff["total_b"] - severity_diff["total_a"]
     if total_delta > 5.0:
-        details.append(f"[bold red]⚠[/] Total severity increased by [bold]{total_delta:.1f}[/] "
-                       f"({severity_diff['total_a']:.1f} → {severity_diff['total_b']:.1f})")
+        details.append(
+            f"[bold red]⚠[/] Total severity increased by [bold]{total_delta:.1f}[/] "
+            f"({severity_diff['total_a']:.1f} → {severity_diff['total_b']:.1f})"
+        )
 
     # --- N-gram similarity ---
     ngram_similarity = 0.0
     if ngrams_a and ngrams_b:
         try:
             from monitor.ngrams import ngram_similarity as _ngram_sim
+
             ngram_similarity = _ngram_sim(ngrams_a, ngrams_b)
         except ImportError:
             pass
@@ -221,7 +234,11 @@ def _extract_file_accesses(events: List[Dict[str, Any]]) -> set:
     for evt in events:
         if evt.get("type") in ("openat", "read", "write", "unlink"):
             target = evt.get("target", "")
-            if target and not target.startswith("/proc/") and not target.startswith("/dev/"):
+            if (
+                target
+                and not target.startswith("/proc/")
+                and not target.startswith("/dev/")
+            ):
                 files.add(target)
     return files
 
