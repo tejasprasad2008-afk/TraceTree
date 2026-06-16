@@ -109,6 +109,9 @@ _SYSCALL_CATEGORY_MAP = {
     "sleep": "time_sleep",
 }
 
+# Maximum lines to parse from a strace log to prevent OOM
+MAX_STRACE_LINES = 500000
+
 
 def extract_ngrams(
     log_path: str,
@@ -182,15 +185,14 @@ def _parse_syscall_categories(log_path: str) -> List[str]:
     Streams the file line-by-line to avoid loading entire file into memory.
     """
     categories: List[str] = []
-    max_lines = 500000  # Cap at 500K lines to prevent OOM on massive strace logs
     line_count = 0
 
     try:
         with open(log_path, 'r', errors='replace') as f:
             for line in f:
                 line_count += 1
-                if line_count > max_lines:
-                    log.warning("Strace log truncated at %d lines (max %d)", line_count, max_lines)
+                if line_count > MAX_STRACE_LINES:
+                    log.warning("Strace log truncated at %d lines (max %d)", line_count, MAX_STRACE_LINES)
                     break
 
                 line = line.strip()
@@ -218,8 +220,11 @@ def _parse_syscall_categories(log_path: str) -> List[str]:
                 syscall = parts[idx]
                 if syscall.startswith("<..."):
                     # Continuation line — try to find the actual syscall name
-                    if idx + 1 < len(parts) and "(" in parts[idx + 1]:
+                    if idx + 1 < len(parts):
                         syscall = parts[idx + 1].split("(")[0]
+                        # Clean up "resumed>" if it's attached
+                        if " " in syscall:
+                            syscall = syscall.split()[0]
                     else:
                         continue
                 elif "(" in syscall:
