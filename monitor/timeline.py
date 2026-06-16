@@ -12,6 +12,7 @@ Usage:
 """
 
 from typing import List, Dict, Any
+from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
 from monitor.utils import KNOWN_SAFE_NETWORKS, is_sensitive_path
 
 # --------------------------------------------------------------------------- #
@@ -54,6 +55,11 @@ def _is_shell_execve(target: str) -> bool:
         "/usr/bin/sh",
         "/usr/bin/bash",
     )
+
+
+def _is_non_standard_execve(target: str) -> bool:
+    """Check if an execve target is NOT a known benign binary."""
+    return target not in BENIGN_BINARIES
 
 
 def _format_time_window(start_ms: float, end_ms: float) -> str:
