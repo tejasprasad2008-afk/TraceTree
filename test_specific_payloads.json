@@ -1,11 +1,11 @@
 {
   "metadata": {
-    "generated_at": "2026-04-21T21:52:47.640123",
+    "generated_at": "2026-06-16T04:03:48.179663",
     "disclosure": "OX Security April 2026",
     "total_payloads": 10,
     "families": [
-      "ui_injection",
-      "json_config_rce"
+      "json_config_rce",
+      "ui_injection"
     ]
   },
   "payloads": [
