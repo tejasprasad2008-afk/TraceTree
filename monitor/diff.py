@@ -66,12 +66,21 @@ def diff_analysis(
 
     details: List[str] = []
 
-    # --- Syscall count diff ---
+    # --- Summarize events (single pass) ---
     events_a = parsed_a.get("events", [])
     events_b = parsed_b.get("events", [])
-    syscall_counts_a = _count_syscall_types(events_a)
-    syscall_counts_b = _count_syscall_types(events_b)
 
+    summary_a = _summarize_events(events_a)
+    summary_b = _summarize_events(events_b)
+
+    syscall_counts_a = summary_a["syscall_counts"]
+    syscall_counts_b = summary_b["syscall_counts"]
+    net_a = summary_a["network_destinations"]
+    net_b = summary_b["network_destinations"]
+    files_a = summary_a["file_accesses"]
+    files_b = summary_b["file_accesses"]
+
+    # --- Syscall count diff ---
     added_syscalls = {}
     removed_syscalls = {}
     changed_syscalls = {}
@@ -104,8 +113,6 @@ def diff_analysis(
         )
 
     # --- Network destination diff ---
-    net_a = _extract_network_destinations(events_a)
-    net_b = _extract_network_destinations(events_b)
     net_added = net_b - net_a
     net_removed = net_a - net_b
     network_diff = {
@@ -119,14 +126,14 @@ def diff_analysis(
         )
 
     # --- File access diff ---
-    files_a = _extract_file_accesses(events_a)
-    files_b = _extract_file_accesses(events_b)
     files_added = files_b - files_a
     files_removed = files_a - files_b
     file_diff = {
         "added": sorted(files_added)[:20],
         "removed": sorted(files_removed)[:20],
     }
+
+    sensitive_added = []
     if files_added:
         sensitive_added = [f for f in files_added if _is_sensitive_file(f)]
         if sensitive_added:
@@ -179,7 +186,7 @@ def diff_analysis(
     verdict = _compute_verdict(
         added_syscalls=added_syscalls,
         net_added=net_added,
-        sensitive_files_added=len([f for f in files_added if _is_sensitive_file(f)]),
+        sensitive_files_added=len(sensitive_added),
         new_sigs=len(sig_diff["only_in_b"]),
         severity_delta=total_delta,
         ngram_similarity=ngram_similarity,
@@ -211,30 +218,37 @@ def diff_analysis(
 # --------------------------------------------------------------------------- #
 
 
-def _count_syscall_types(events: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Count occurrences of each syscall type."""
-    counts: Dict[str, int] = {}
+def _summarize_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Summarize events in a single pass:
+    - Count occurrences of each syscall type.
+    - Extract unique network destinations.
+    - Extract unique file paths (excluding /proc and /dev).
+    """
+    syscall_counts: Dict[str, int] = {}
+    network_destinations: set = set()
+    file_accesses: set = set()
+
     for evt in events:
+        # 1. Syscall type
         stype = evt.get("type", "unknown")
-        counts[stype] = counts.get(stype, 0) + 1
-    return counts
+        syscall_counts[stype] = syscall_counts.get(stype, 0) + 1
 
+        # 2. Network destinations
+        if stype == "connect":
+            network_destinations.add(evt.get("target", ""))
 
-def _extract_network_destinations(events: List[Dict[str, Any]]) -> set:
-    """Extract unique network destinations from events."""
-    dests = set()
-    for evt in events:
-        if evt.get("type") == "connect":
-            dests.add(evt.get("target", ""))
-    return dests
-
-
-def _extract_file_accesses(events: List[Dict[str, Any]]) -> set:
-    """Extract unique file paths from events."""
-    files = set()
-    for evt in events:
-        if evt.get("type") in ("openat", "read", "write", "unlink"):
+        # 3. File accesses
+        elif stype in ("openat", "read", "write", "unlink"):
             target = evt.get("target", "")
+            if target and not target.startswith("/proc/") and not target.startswith("/dev/"):
+                file_accesses.add(target)
+
+    return {
+        "syscall_counts": syscall_counts,
+        "network_destinations": network_destinations,
+        "file_accesses": file_accesses,
+    }
             if (
                 target
                 and not target.startswith("/proc/")
