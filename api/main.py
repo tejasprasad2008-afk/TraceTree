@@ -7,7 +7,13 @@ import os
 
 # --- Security ---
 # Load API keys from environment variable for production
-VALID_API_KEYS = set(os.getenv("TRACETREE_API_KEYS", "tracetree_secret_dev_key,sk-trace-78560908").split(","))
+_api_keys_str = os.getenv("TRACETREE_API_KEYS")
+if not _api_keys_str:
+    # In a real production environment, we should never fall back to hardcoded keys.
+    # We raise an error here to prevent the API from starting in an unauthenticated or misconfigured state.
+    raise RuntimeError("TRACETREE_API_KEYS environment variable is not set.")
+
+VALID_API_KEYS = set(k.strip() for k in _api_keys_str.split(",") if k.strip())
 
 async def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key not in VALID_API_KEYS:
