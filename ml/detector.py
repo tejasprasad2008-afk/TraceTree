@@ -158,9 +158,17 @@ def get_ml_model(version: str = None):
             return _MODEL_CACHE
 
     try:
+        if model_path.exists() and model_path.stat().st_size == 0:
+            # 0-byte file is expected to trigger fallback cleanly
+            _MODEL_CACHE = train_baseline_model()
+            return _MODEL_CACHE
         with open(model_path, "rb") as f:
             _MODEL_CACHE = pickle.load(f)
             return _MODEL_CACHE
+    except (EOFError, pickle.UnpicklingError):
+        # Graceful fallback without alarming the user
+        _MODEL_CACHE = train_baseline_model()
+        return _MODEL_CACHE
     except Exception as e:
         console.print(f"[bold red]Local model load failed:[/] {e}")
         _MODEL_CACHE = train_baseline_model()

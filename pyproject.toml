@@ -36,3 +36,14 @@ cascade-dashboard = "cli:dashboard_cli"
 [tool.setuptools]
 packages = ["api", "sandbox", "monitor", "graph", "ml", "mcp", "mascot", "watcher", "hooks"]
 py-modules = ["cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["--strict-markers", "-v"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests requiring external services",
+]

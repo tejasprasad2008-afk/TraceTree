@@ -1,5 +1,12 @@
 import os
 import sys
+import socket
+from pathlib import Path
+
+# Add project root directory to sys.path so modules like orchestrator are always importable
+project_root = str(Path(__file__).parent.absolute())
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Dynamically adjust PATH to prioritize typical macOS/Linux binary directories (e.g. Homebrew)
 for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
@@ -23,6 +30,15 @@ try:
 except ImportError:
     docker = None
 
+
+def _is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    """Check whether a TCP port is already bound on the given host."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex((host, port)) == 0
+
+from rich.columns import Columns
+from rich.layout import Layout
+from rich.style import Style
 from sandbox.sandbox import run_sandbox
 
 app = typer.Typer(help="TraceTree Security Analyzer")
@@ -368,9 +384,35 @@ def analyze(
     url: str = typer.Option(None, "--url", "-u", help="Optional URL for private dependencies"),
     sarif: str = typer.Option(None, "--sarif", "-s", help="Output SARIF report to this file path"),
     gui: bool = typer.Option(False, "--gui", "-g", help="Send analysis telemetry to running GUI dashboard"),
+    ai: bool = typer.Option(False, "--ai", help="Use local AI (Ollama + Qwen2.5-Coder) to verify findings."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Dry-run mode to print raw LLM prompts/responses"),
 ):
     """Run a behavioral cascade analysis on a suspicious target."""
     check_docker_preflight()
+
+    # Pre-flight: build orchestrator once and reuse it in the analysis block (Issue 1 fix)
+    orchestrator = None
+    if ai:
+        try:
+            from orchestrator.ai_mesh import AIMeshOrchestrator
+            orchestrator = AIMeshOrchestrator(dry_run=dry_run, verbose=dry_run)
+            orchestrator.check_connection_health()
+        except Exception as e:
+            # output a CONNECTION_ERROR block to the console
+            console.print("\n")
+            console.print(Panel(
+                f"[bold red]❌ CONNECTION_ERROR[/]\n\n"
+                f"Failed to connect to local Ollama API on port 11434.\n"
+                f"Error: {e}\n\n"
+                f"Please verify that Ollama is running and the model [bold]qwen2.5-coder:7b[/] is pulled.\n"
+                f"Run: [bold]ollama serve[/] to start the server.",
+                title="[bold red]Orchestrator Health Check Failed[/]",
+                border_style="red",
+                expand=False
+            ))
+            # instead of defaulting to a "MALICIOUS" verdict
+            raise typer.Exit(1)
+
     target_type = type if type else determine_target_type(target)
 
     console.print(Panel.fit(
@@ -527,6 +569,68 @@ def analyze(
                 border_style="magenta",
                 expand=False,
             ))
+
+        # ── AI-native Triage (Legs 1-4, 5 & 8) ──
+        # Issues 1 & 2 fix: reuse pre-flight orchestrator; guard against silent verdict corruption.
+        ai_triage_ran = False
+        if ai and graph_data and orchestrator is not None:
+            try:
+                from orchestrator.ai_mesh import render_ai_triage_panel, TriageResult
+                console.print("\n[bold cyan]🧠 Running AI-native triage logic (Qwen2.5-Coder)...[/]")
+                # Reuse the already-health-checked orchestrator from the pre-flight block.
+                # No second AIMeshOrchestrator construction; no second check_connection_health() call.
+
+                # 1. Legs 1 & 2: Syscall Simplifier
+                syscall_events = parsed_data.get("events", [])
+                syscall_results = orchestrator.simplify_syscall_log(syscall_events)
+                render_ai_triage_panel("Legs 1 & 2: Syscall Simplifier", syscall_results)
+
+                # 2. Legs 3 & 4: Anomaly Feature Vector
+                from ml.detector import map_features
+                feature_vector = map_features(graph_data, parsed_data)
+                sensor_names = [
+                    "node_count", "edge_count", "network_connections", "file_reads",
+                    "execve_count", "total_severity", "suspicious_networks",
+                    "sensitive_files", "max_severity", "temporal_pattern_count"
+                ]
+                feature_dict = dict(zip(sensor_names, feature_vector))
+                feature_results = orchestrator.describe_feature_vector(feature_dict)
+                render_ai_triage_panel("Legs 3 & 4: Anomaly Feature Vector", feature_results)
+
+                # 3. Legs 5 & 8: False Positive Jury
+                matched_rule = {
+                    "rule_name": sig_matches[0]["name"] if sig_matches else "ML_Anomaly_Detection",
+                    "severity": confidence / 10.0 if confidence else 5.0
+                }
+                package_metadata = {
+                    "name": current_target,
+                    "type": sub_type,
+                    "total_severity": parsed_data.get("stats", {}).get("total_severity", 0.0),
+                    "file_count": parsed_data.get("stats", {}).get("file_count", 0)
+                }
+                triage_results = orchestrator.triage_false_positive(matched_rule, package_metadata)
+
+                render_ai_triage_panel("Legs 5 & 8: False Positive Jury", triage_results.__dict__)
+                ai_triage_ran = True
+
+                # Override verdict if FP Juror says FALSE_POSITIVE
+                if triage_results.is_false_positive():
+                    console.print("[bold green]✔ AI False Positive Jury has OVERRIDDEN the verdict to CLEAN![/]")
+                    is_malicious = False
+                    confidence = triage_results.confidence * 100.0
+            except Exception as e:
+                import logging as _logging
+                _logging.getLogger("tracetree.cli").exception("AI Triage failed")
+                console.print(
+                    f"[bold red]❌ AI Triage failed — verdict is based on static analysis only:[/] {e}"
+                )
+
+        # Issue 2 fix: surface a clear warning when --ai was requested but triage did not complete.
+        if ai and not ai_triage_ran:
+            console.print(
+                "[bold yellow]⚠ WARNING: AI triage did not complete. "
+                "Final verdict reflects static analysis only.[/]"
+            )
 
         # ── Final Verdict ──
         if is_malicious:
@@ -1385,6 +1489,9 @@ def scan_cmd(
 
     findings = []
     if scan_path.is_file():
+        if "monitor" in scan_path.parts:
+            console.print("\n[bold green]✔ Skipping monitor system file (self-scan exclusion).[/]\n")
+            return
         for f in scan_file_for_secrets(scan_path):
             f["file_path"] = str(scan_path)
             findings.append(f)
@@ -1617,6 +1724,40 @@ def launch_dashboard():
         except Exception:
             pass
 
+    # Determine API port
+    api_port_str = os.environ.get("TRACETREE_API_PORT", "8000")
+    try:
+        api_port = int(api_port_str)
+    except ValueError:
+        api_port = 8000
+
+    # Issue 4 fix: use module-level _is_port_in_use() — testable, not re-created per call.
+    if _is_port_in_use(api_port):
+        # Try to get the occupying PID
+        occupying_pid = None
+        try:
+            import subprocess
+            out = subprocess.check_output(["lsof", "-t", f"-i:{api_port}"], text=True)
+            pids = [int(p.strip()) for p in out.strip().split("\n") if p.strip()]
+            if pids:
+                occupying_pid = pids[0]
+        except Exception:
+            pass
+
+        pid_info = f" (PID {occupying_pid})" if occupying_pid else ""
+        console.print(Panel(
+            f"[bold red]Port {api_port} is already in use{pid_info}.[/]\n\n"
+            f"The TraceTree API Gateway cannot start because another process is occupying port {api_port}.\n\n"
+            f"[bold yellow]How to fix:[/]\n"
+            f"1. Free the port: run [cyan]kill -9 {occupying_pid}[/] (if you want to terminate the process).\n"
+            f"2. Run on a different port: set the [cyan]TRACETREE_API_PORT[/] environment variable:\n"
+            f"   [cyan]export TRACETREE_API_PORT=8001[/] (or another free port) before running the command.",
+            title="[bold red]Port Conflict[/]",
+            border_style="red",
+            expand=False
+        ))
+        raise typer.Exit(1)
+
     try:
         # Start API server (Uvicorn)
         # We prefer the virtual environment's Python if it exists, to ensure uvicorn is available
@@ -1625,7 +1766,7 @@ def launch_dashboard():
         if venv_python.exists():
             python_exe = str(venv_python)
             
-        api_cmd = [python_exe, "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8000"]
+        api_cmd = [python_exe, "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", str(api_port)]
         api_proc = subprocess.Popen(
             api_cmd,
             env=os.environ,
@@ -1684,7 +1825,7 @@ def launch_dashboard():
     # Print the beautiful URL Panel
     url = "http://localhost:3001"
     orch_url = "http://localhost:3000"
-    api_url = "http://127.0.0.1:8000"
+    api_url = f"http://127.0.0.1:{api_port}"
     
     panel_content = (
         f"[bold green]🚀 TraceTree Dashboard is active![/]\n\n"

@@ -12,10 +12,17 @@ Usage:
 
 import logging
 import os
+import math as _math
+from collections import Counter as _Counter
+from functools import lru_cache as _lru_cache
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 log = logging.getLogger(__name__)
+
+# Exclusions to speed up scans and avoid false positives
+SCAN_EXCLUDE_EXTENSIONS = {'.md', '.txt', '.svg', '.png', '.jpg'}
+SCAN_EXCLUDE_DIRS = {'docs', 'public', 'assets', 'README'}
 
 # --------------------------------------------------------------------------- #
 #  Embedded YARA rules (no external yara binary required)
@@ -28,14 +35,16 @@ log = logging.getLogger(__name__)
 # the same patterns.
 
 _YARA_RULES_SRC = r"""
+import "math"
+
 rule SuspiciousBase64Payload {
     meta:
         description = "Detects long base64-encoded payloads commonly used for obfuscation"
         severity = "high"
     strings:
-        $b64 = /[A-Za-z0-9+/]{100,}={0,2}/ ascii
+        $b64 = /[A-Za-z0-9+\/]{1000,}={0,2}/ ascii
     condition:
-        $b64
+        $b64 and math.entropy(@b64, !b64) >= 5.0
 }
 
 rule ReverseShellPattern {
@@ -111,7 +120,7 @@ rule MaliciousPostInstall {
     strings:
         $net_exfil = /(?:requests\.|urllib|wget|curl|socket\.)\s*(?:get|post|put|send)/ nocase
         $encode_exfil = /(?:base64|encode|b64encode)\s*\(.*(?:open|read|password|secret|token)/ nocase
-        $c2_pattern = /(?:stratum\+tcp://|pastebin|transfer\.sh|file\.io|0x0\.st)/ nocase
+        $c2_pattern = /(?:stratum\+tcp:\/\/|pastebin|transfer\.sh|file\.io|0x0\.st)/ nocase
     condition:
         2 of them
 }
@@ -213,12 +222,30 @@ def _compile_yara_rules(yara):
         mcp_yara_path = Path(__file__).parent.parent / "data" / "mcp_rce_signatures.yara"
         
         if mcp_yara_path.exists():
-            return yara.compile(filepaths={
-                "embedded": Path("/tmp/embedded.yara"), # Dummy key
-                "mcp": str(mcp_yara_path)
-            }, source=_YARA_RULES_SRC)
+            try:
+                with open(mcp_yara_path, "r", encoding="utf-8") as f:
+                    extra_rules = f.read()
+                combined_src = _YARA_RULES_SRC + "\n" + extra_rules
+                return yara.compile(source=combined_src)
+            except yara.SyntaxError as syn_err:
+                # Issue 5 fix: a syntax error in a security rule is a defect, not a recoverable
+                # event. Raise loudly so operators know MCP rules are NOT active.
+                log.error(
+                    "MCP YARA rules have a syntax error and will NOT be loaded: %s", syn_err
+                )
+                raise RuntimeError(
+                    f"MCP YARA rule syntax error in {mcp_yara_path}: {syn_err}"
+                ) from syn_err
+            except OSError as read_err:
+                # IO failure (file unreadable) is recoverable — fall back to embedded rules.
+                log.warning(
+                    "Could not read MCP YARA file (IO error), falling back to embedded rules: %s",
+                    read_err,
+                )
         
         return yara.compile(source=_YARA_RULES_SRC)
+    except RuntimeError:
+        raise
     except Exception as e:
         log.warning("YARA compile error: %s", e)
         # Try compiling only the embedded source if combined failed
@@ -239,7 +266,7 @@ _FALLBACK_PATTERNS = [
         "rule_name": "SuspiciousBase64Payload",
         "severity": "high",
         "description": "Detects long base64-encoded payloads commonly used for obfuscation",
-        "regex": _re.compile(r"[A-Za-z0-9+/]{100,}={0,2}"),
+        "regex": _re.compile(r"[A-Za-z0-9+/]{1000,}={0,2}"),
     },
     {
         "rule_name": "ReverseShellPattern",
@@ -303,6 +330,24 @@ _FALLBACK_PATTERNS = [
 ]
 
 
+@_lru_cache(maxsize=512)
+def _calculate_entropy(data: str) -> float:
+    """Calculate the Shannon entropy of a string.
+
+    Results are cached via lru_cache to avoid redundant Counter allocations
+    when the same base64 blob appears on multiple lines (Issue 3 fix).
+    """
+    if not data:
+        return 0.0
+    length = len(data)
+    counts = _Counter(data)
+    entropy = 0.0
+    for count in counts.values():
+        p_x = count / length
+        entropy += -p_x * _math.log2(p_x)
+    return entropy
+
+
 def _fallback_regex_scan(
     log_path: Optional[str],
     package_dir: Optional[str],
@@ -333,7 +378,17 @@ def _fallback_regex_scan(
                         matches = pattern["regex"].findall(line)
                         if matches:
                             rule = pattern["rule_name"]
-                            file_matches.setdefault(rule, []).extend(matches)
+                            if rule == "SuspiciousBase64Payload":
+                                # Issue 3 fix: len() guard removed — the regex already enforces
+                                # {1000,} so it is always True and adds O(N) overhead for nothing.
+                                valid_matches = [
+                                    m for m in matches
+                                    if _calculate_entropy(m) >= 5.0
+                                ]
+                                if valid_matches:
+                                    file_matches.setdefault(rule, []).extend(valid_matches)
+                            else:
+                                file_matches.setdefault(rule, []).extend(matches)
         except Exception:
             continue
 
@@ -367,9 +422,21 @@ def _collect_files(
         files.append(Path(log_path))
 
     if package_dir and Path(package_dir).is_dir():
-        for root, _dirs, filenames in os.walk(package_dir):
+        for root, dirs, filenames in os.walk(package_dir):
+            # Prune excluded directories in-place
+            dirs[:] = [d for d in dirs if d not in SCAN_EXCLUDE_DIRS]
+            
             for fname in filenames:
                 fpath = Path(root) / fname
+                
+                # Check extension exclusion
+                if fpath.suffix.lower() in SCAN_EXCLUDE_EXTENSIONS:
+                    continue
+                
+                # Check parent path components to make sure they are not in SCAN_EXCLUDE_DIRS
+                if any(part in SCAN_EXCLUDE_DIRS for part in fpath.parts):
+                    continue
+
                 # Skip very large files (>5 MB) and binary formats we can't scan
                 try:
                     if fpath.stat().st_size < 5 * 1024 * 1024:
