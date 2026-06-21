@@ -11,6 +11,7 @@ import math
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Generator, Tuple
+from monitor.yara import SCAN_EXCLUDE_EXTENSIONS, SCAN_EXCLUDE_DIRS
 
 log = logging.getLogger(__name__)
 
@@ -187,7 +188,7 @@ def scan_file_for_secrets(file_path: Path, skip_yara: bool = True) -> Generator[
 def scan_directory(root_path: Path, ignore_git: bool = True) -> List[Dict[str, Any]]:
     """Recursively scan a directory for secrets and malicious patterns."""
     results = []
-    ignored_dirs = {'.git', 'venv', 'traceenv', 'node_modules', '__pycache__', '.ruff_cache', '.vscode', 'logs', 'mascot', 'cascade_analyzer.egg-info', 'dist', 'build'}
+    ignored_dirs = {'.git', 'venv', 'traceenv', 'node_modules', '__pycache__', '.ruff_cache', '.vscode', 'logs', 'mascot', 'cascade_analyzer.egg-info', 'dist', 'build'} | SCAN_EXCLUDE_DIRS
     ignored_files = {'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'}
     
     # 1. Optimized File Walk
@@ -202,7 +203,11 @@ def scan_directory(root_path: Path, ignore_git: bool = True) -> List[Dict[str, A
                 
             fpath = Path(root) / fname
             # Skip non-source files and large files
-            if fpath.suffix.lower() in ['.log', '.pkl', '.exe', '.dmg', '.zip', '.tar', '.gz', '.png', '.jpg', '.jpeg', '.gif', '.pdf', '.ico', '.svg']:
+            if fpath.suffix.lower() in ['.log', '.pkl', '.exe', '.dmg', '.zip', '.tar', '.gz', '.gif', '.pdf', '.ico'] or fpath.suffix.lower() in SCAN_EXCLUDE_EXTENSIONS:
+                continue
+                
+            # Skip if any parent directory is excluded
+            if any(part in SCAN_EXCLUDE_DIRS for part in fpath.parts):
                 continue
                 
             try:
