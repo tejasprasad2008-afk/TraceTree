@@ -1,7 +1,5 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import uuid
@@ -9,7 +7,13 @@ import os
 
 # --- Security ---
 # Load API keys from environment variable for production
-VALID_API_KEYS = set(os.getenv("TRACETREE_API_KEYS", "tracetree_secret_dev_key,sk-trace-78560908").split(","))
+_api_keys_str = os.getenv("TRACETREE_API_KEYS")
+if not _api_keys_str:
+    # In a real production environment, we should never fall back to hardcoded keys.
+    # We raise an error here to prevent the API from starting in an unauthenticated or misconfigured state.
+    raise RuntimeError("TRACETREE_API_KEYS environment variable is not set.")
+
+VALID_API_KEYS = set(k.strip() for k in _api_keys_str.split(",") if k.strip())
 
 async def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key not in VALID_API_KEYS:
@@ -159,7 +163,6 @@ async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
         internal_graph = mock_db[analysis_id]["graph"]
         # ... logic to convert to GraphVisualizationResponse ...
         # For now, returning mock to avoid breakages
-        pass
         
     package_name = mock_db[analysis_id]["package_name"]
     
@@ -181,20 +184,5 @@ async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
 
 @app.get("/")
 async def root():
-    """Redirect root access to the dashboard."""
-    return RedirectResponse(url="/app/")
-
-# Mount the frontend directory to serve static UI files under /app path
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.isdir(frontend_path):
-    app.mount("/app", StaticFiles(directory=frontend_path, html=True), name="frontend")
-
-@app.get("/")
-async def root():
-    """Redirect root access to the dashboard."""
-    return RedirectResponse(url="/app/")
-
-# Mount the frontend directory to serve static UI files under /app path
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.isdir(frontend_path):
-    app.mount("/app", StaticFiles(directory=frontend_path, html=True), name="frontend")
+    """Return API health status."""
+    return {"status": "TraceTree API is active", "version": "1.0.0"}

@@ -1255,7 +1255,6 @@ def check(
     """
     check_docker_preflight()
 
-    from watcher.session import SessionWatcher
     from mascot.spider import SpiderMascot
 
     spider = SpiderMascot()

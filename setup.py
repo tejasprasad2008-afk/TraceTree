@@ -1,6 +1,5 @@
 from setuptools import setup, find_packages
 from setuptools.command.install import install
-import sys
 
 class PostInstallMessage(install):
     def run(self):

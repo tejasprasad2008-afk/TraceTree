@@ -16,6 +16,7 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path, is_secret_path
 
 log = logging.getLogger(__name__)
 
@@ -24,30 +25,6 @@ log = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 
 _SIGNATURES_PATH = Path(__file__).parent.parent / "data" / "signatures.json"
-
-# --------------------------------------------------------------------------- #
-#  Known benign hosts for network classification (re-used from parser)
-# --------------------------------------------------------------------------- #
-
-KNOWN_SAFE_NETWORKS = frozenset([
-    "151.101.", "104.16.", "104.17.", "52.85.", "54.230.",
-    "13.107.", "52.96.", "40.79.", "140.82.121.", "140.82.112.",
-    "185.199.108.", "185.199.109.", "185.199.110.", "185.199.111.",
-    "199.232.", "99.84.", "99.86.", "13.224.", "13.225.", "13.226.",
-    "13.227.", "3.160.", "3.162.", "3.164.", "3.165.", "3.166.",
-    "3.167.", "3.168.", "205.251.", "13.249.",
-])
-
-BENIGN_BINARIES = frozenset([
-    "/usr/local/bin/pip", "/usr/bin/pip",
-    "/usr/local/bin/python", "/usr/bin/python",
-    "/usr/local/bin/python3", "/usr/bin/python3",
-    "/usr/bin/sh", "/usr/local/bin/sh",
-    "/bin/sh", "/bin/bash",
-    "/usr/local/bin/npm", "/usr/bin/npm",
-    "/usr/local/bin/node", "/usr/bin/node",
-    "/usr/bin/ip", "/sbin/ip",
-])
 
 # --------------------------------------------------------------------------- #
 #  Public API
@@ -288,17 +265,10 @@ def _check_sequence_condition(
         return False
 
     if condition == "sensitive":
-        sensitive_patterns = [
-            "/etc/shadow", "/etc/passwd", ".aws/", ".ssh/",
-            ".npmrc", ".pypirc", ".env", ".git-credentials",
-            "/proc/self/environ", "/root/.bash_history",
-            "/var/run/secrets",
-        ]
-        return any(p in target for p in sensitive_patterns)
+        return is_sensitive_path(target)
 
     if condition == "secret":
-        secret_patterns = [".env", ".npmrc", ".aws/credentials", ".ssh/id_rsa"]
-        return any(p in target for p in secret_patterns)
+        return is_secret_path(target)
 
     if condition == "cron_path":
         cron_patterns = ["/var/spool/cron", "crontab", "/etc/cron.d",
