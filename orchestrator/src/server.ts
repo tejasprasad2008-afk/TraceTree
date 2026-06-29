@@ -6,7 +6,7 @@ import 'dotenv/config';
 
 import { TraceTreeEngine } from './engine/index.js';
 import { createLLMProvider } from './llm/index.js';
-import { SessionStore } from './store/index.js';
+import { SessionStore, ScanRecord } from './store/index.js';
 import { logger } from './utils/index.js';
 import { AuditLogEntry } from './types/index.js';
 
@@ -117,7 +117,7 @@ const generateAISummary = async (findingsStr: string) => {
     logger.info('server', `AI summary completed successfully: "${summary}"`);
     broadcast('ai_summary_completed', { summary });
   } catch (error) {
-    logger.error('server', 'Failed to generate AI summary: ' + error);
+    logger.error('server', 'Failed to generate AI summary', error);
     broadcast('ai_summary_completed', { summary: 'Error generating AI summary: ' + (error as Error).message });
   }
 };
@@ -128,12 +128,29 @@ const generateAISummary = async (findingsStr: string) => {
  */
 fastify.post('/api/telemetry', async (request, reply) => {
   const { event, payload } = request.body as { event: string; payload: any };
-  
+
   try {
     broadcast(event, payload);
 
-    // If findings are received, trigger the background AI summary generator
     if (event === 'step_completed' && payload?.findings) {
+      // Persist scan to local SQLite
+      try {
+        const findings = typeof payload.findings === 'string' ? JSON.parse(payload.findings) : payload.findings;
+        const scan: ScanRecord = {
+          id: nanoid(),
+          userId: payload.userId || 'anonymous',
+          target: findings.pid || findings.target || payload.target || 'unknown',
+          verdict: findings.is_malicious ? 'MALICIOUS' : 'CLEAN',
+          confidence: findings.confidence_score ?? 0,
+          findings: typeof payload.findings === 'string' ? payload.findings : JSON.stringify(payload.findings),
+          createdAt: new Date().toISOString(),
+        };
+        store.saveScan(scan);
+        logger.info('server', `Scan saved: ${scan.target} → ${scan.verdict}`);
+      } catch (parseErr) {
+        logger.error('server', 'Failed to persist scan', parseErr);
+      }
+
       generateAISummary(payload.findings).catch((err) => {
         fastify.log.error(err);
       });
@@ -143,6 +160,23 @@ fastify.post('/api/telemetry', async (request, reply) => {
   } catch (error: any) {
     fastify.log.error(error);
     reply.status(500).send({ error: 'Failed to broadcast telemetry' });
+  }
+});
+
+/**
+ * Scan History
+ * GET /api/scans?userId=<uid>&limit=<n>
+ */
+fastify.get('/api/scans', async (request, reply) => {
+  const { userId, limit } = request.query as { userId?: string; limit?: string };
+  try {
+    const scans = userId
+      ? store.getScansByUser(userId, limit ? parseInt(limit) : 100)
+      : store.getAllScans(limit ? parseInt(limit) : 200);
+    return { scans };
+  } catch (error: any) {
+    fastify.log.error(error);
+    reply.status(500).send({ error: 'Failed to fetch scans' });
   }
 });
 

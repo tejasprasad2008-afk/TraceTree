@@ -1,10 +1,20 @@
 import Database from 'better-sqlite3';
-import { 
-  InvestigationPlan, 
-  AuditLogEntry, 
-  HITLState 
+import {
+  InvestigationPlan,
+  AuditLogEntry,
+  HITLState
 } from '../types/index.js';
 import { logger } from '../utils/index.js';
+
+export interface ScanRecord {
+  id: string;
+  userId: string;
+  target: string;
+  verdict: 'MALICIOUS' | 'CLEAN' | 'UNKNOWN';
+  confidence: number;
+  findings: string; // JSON string
+  createdAt: string;
+}
 
 /**
  * Enterprise Session Store
@@ -49,6 +59,19 @@ export class SessionStore {
         requesterReasoning TEXT,
         status TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS scans (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        target TEXT NOT NULL,
+        verdict TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0,
+        findings TEXT NOT NULL DEFAULT '{}',
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_scans_userId ON scans (userId);
+      CREATE INDEX IF NOT EXISTS idx_scans_createdAt ON scans (createdAt DESC);
     `);
     logger.info('store', 'Database schema initialized');
   }
@@ -106,6 +129,28 @@ export class SessionStore {
       ...row,
       toolCall: JSON.parse(row.toolCall)
     };
+  }
+
+  // --- Scan History ---
+
+  saveScan(scan: ScanRecord) {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO scans (id, userId, target, verdict, confidence, findings, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(scan.id, scan.userId, scan.target, scan.verdict, scan.confidence, scan.findings, scan.createdAt);
+  }
+
+  getScansByUser(userId: string, limit = 100): ScanRecord[] {
+    return this.db.prepare(
+      'SELECT * FROM scans WHERE userId = ? ORDER BY createdAt DESC LIMIT ?'
+    ).all(userId, limit) as ScanRecord[];
+  }
+
+  getAllScans(limit = 200): ScanRecord[] {
+    return this.db.prepare(
+      'SELECT * FROM scans ORDER BY createdAt DESC LIMIT ?'
+    ).all(limit) as ScanRecord[];
   }
 
   // --- Audit Logs ---

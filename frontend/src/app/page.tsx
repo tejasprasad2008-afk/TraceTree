@@ -5,6 +5,9 @@ import { useTraceEvents } from '@/hooks/useTraceEvents';
 import IncidentFeed from '@/components/IncidentFeed';
 import HITLConsole from '@/components/HITLConsole';
 import TelemetryVisualizer from '@/components/TelemetryVisualizer';
+import AuthGate from '@/components/AuthGate';
+import ScanHistory from '@/components/ScanHistory';
+import { useAuth } from '@/hooks/useAuth';
 
 // Neoclassical divider component
 const NeoclassicalDivider = ({ className = "" }: { className?: string }) => (
@@ -336,6 +339,7 @@ const ManualSection = ({ isConnected }: { isConnected: boolean }) => (
 
 export default function Dashboard() {
   const { events, isConnected } = useTraceEvents();
+  const { user, signOut } = useAuth();
   const [activeHitl, setActiveHitl] = useState<any>(null);
   const [selectedTelemetry, setSelectedTelemetry] = useState<any>(null);
   const [aiSummaryStatus, setAiSummaryStatus] = useState<'loading' | 'completed' | null>(null);
@@ -417,11 +421,41 @@ export default function Dashboard() {
       <SecureAgentSection events={events} />
       <ManualSection isConnected={isConnected} />
 
+      {/* Scan History Section */}
+      {user && (
+        <section className="snap-section bg-coal/98 py-20 md:py-40 px-6 md:px-24 relative z-30 border-t border-canvas/10">
+          <div className="max-w-5xl mx-auto">
+            <ScanHistory userId={user.id} />
+          </div>
+        </section>
+      )}
+
       {/* HITL Modal */}
       <HITLConsole 
         hitlRequest={activeHitl} 
         onResolve={() => setActiveHitl(null)} 
       />
+
+      {/* Auth Gate — shown when not logged in */}
+      {!user && <AuthGate />}
+
+      {/* Floating user widget */}
+      {user && (
+        <div className="fixed top-4 right-4 z-40 flex items-center gap-3 bg-coal/80 backdrop-blur-md border border-canvas/15 px-3 py-2 shadow-xl">
+          {user.user_metadata?.avatar_url && (
+            <img src={user.user_metadata.avatar_url} alt="" className="w-6 h-6 rounded-full" />
+          )}
+          <span className="font-mono text-[9px] tracking-[0.2em] text-canvas/60 uppercase hidden md:block">
+            {user.user_metadata?.full_name ?? user.email}
+          </span>
+          <button
+            onClick={signOut}
+            className="font-mono text-[8px] tracking-widest uppercase text-canvas/30 hover:text-terracotta transition-colors cursor-pointer"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
     </div>
   );
 }

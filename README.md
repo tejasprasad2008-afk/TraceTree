@@ -6,6 +6,34 @@
 
 **TraceTree** (cascade-analyzer) is an autonomous security organism designed for the agentic era. It moves beyond simple scanning into a robust, hardened, and scalable detection ecosystem. Like its mascot, the spider, TraceTree weaves a comprehensive web of protection around your development workflow using its eight specialized "legs."
 
+## Repository Structure
+
+```
+TraceTree/
+├── api/                    # API stubs
+├── codebase-analysis-docs/ # Architecture documents and knowledge guides
+├── data/                   # Behavioral signatures, rules, and training datasets
+├── docs/                   # Documentation assets
+├── examples/               # Demo scripts and usage examples
+├── frontend/               # Next.js/React web dashboard
+├── graph/                  # NetworkX directed graph builder
+├── hooks/                  # Git/Shell hooks for background monitoring
+├── logs/                   # Execution trace logs and strace outputs
+├── macapp/                 # Native macOS menu bar app
+├── mascot/                 # Console ASCII spider mascot
+├── mcp/                    # MCP server security testing module
+├── ml/                     # Machine learning classification and anomaly detection
+├── monitor/                # Core syscall parser, YARA matching, and timelines
+├── orchestrator/           # TypeScript multi-agent coordination server
+├── repocheckai/            # Repository analysis engine (TypeScript/Node)
+├── samples/                # Malware and benign files for sandbox tests
+├── sandbox/                # Docker container manager and strace sandbox
+├── test_targets/           # Mock packages/servers for detection testing
+├── tests/                  # Unit, integration, and system tests
+├── watcher/                # File system change listener daemon
+└── worker/                 # Background task execution worker
+```
+
 ## The 8 Legs of the TraceTree Spider
 
 1.  **Leg 1: Sandbox Isolation (The Trap)** — Executes targets in isolated Docker containers (or a high-performance `direct` mode) where threats are physically contained.
@@ -313,52 +341,6 @@ cascade-analyze mcp --npm some-package --output json
 | `PROMPT_INJECTION_VECTOR` | High | Tool descriptions contain zero-width characters or injection language |
 
 6. **Baseline comparison** — Compares syscall profiles against hardcoded baselines for 5 server types: `filesystem`, `github`, `postgres`, `fetch`, `shell`.
-
-## Repository Structure
-
-```
-.
-├── api/                        # API implementation stubs
-├── codebase-analysis-docs/     # System architecture documents and knowledge guides
-├── data/                       # Behavioral signatures, rules, and training datasets (Example/Training Data)
-├── docs/                       # Documentation assets (e.g., banners)
-├── examples/                   # Code examples demonstrating TraceTree functionality (Example Data)
-├── frontend/                   # Next.js/React web dashboard (Implementation)
-├── graph/                      # NetworkX directed graph builder for process tracing (Implementation)
-├── hooks/                      # Git/Shell hooks for background monitoring (Implementation)
-├── logs/                       # Execution trace logs and strace outputs (Example/Run Data)
-├── macapp/                     # Native macOS app code (SwiftUI) (Implementation)
-├── mascot/                     # Console mascot animation (ASCII spider) (Implementation)
-├── mcp/                        # MCP server security testing module (Implementation)
-├── ml/                         # Machine learning classification and anomaly detection (Implementation)
-├── monitor/                    # Core syscall parser, YARA matching, and timelines (Implementation)
-├── orchestrator/               # TypeScript-based multi-agent coordination server (Implementation)
-├── repocheckai/                # Repository analysis engine (TypeScript/Node) (Implementation)
-├── samples/                    # Packaged malware and benign files for sandbox tests (Example/Test Data)
-├── sandbox/                    # Docker container manager and strace sandbox (Implementation)
-├── test_targets/               # Mock packages/servers used to test detection (Example/Test Data)
-├── tests/                      # Unit, integration, and system tests
-├── watcher/                    # Local file system change listener daemon (Implementation)
-└── worker/                     # Background task execution worker (Implementation)
-```
-
-### Core Implementation Files
-*   **System Call Analysis & Rules:** Found in `monitor/` (parsers, signature engines, temporal analysis, differential tests).
-*   **Sandbox Orchestration:** Located in `sandbox/` (manages isolated Docker execution and strace hooks).
-*   **ML Detection:** Located in `ml/` (trained models, trainers, and detectors).
-*   **Agent Shield (MCP):** Found in `mcp/` (probes, sandboxing, client simulation, and threat classifiers).
-*   **User Interfaces:**
-    *   **CLI:** Main entrypoint in `cli.py`.
-    *   **Web Dashboard:** Standard web-based panel in `frontend/`.
-    *   **macOS Application:** Swift-based GUI in `macapp/`.
-    *   **Repository Analyser (RepoCheckAI):** Code quality & structure inspection CLI in `repocheckai/`.
-
-### Example Data & Samples
-*   **Behavioral Signatures & Rules:** `data/signatures.json` contains the JSON definitions of the 8 default behaviors traced by TraceTree.
-*   **Test Malware & Benign Files:** `samples/` contains file payloads like `mirai.zip` used for sandboxing validation.
-*   **Mock Verification Targets:** `test_targets/` contains dummy Python and Node packages (`benign_pkg`, `malicious_pkg`, `adversarial_mcp_server`) used to run sandbox integration tests.
-*   **Examples/Demo Scripts:** `examples/` contains scripts (such as `examples/mcp_rce_detection_example.py`) demonstrating how to use the monitoring API.
-*   **Execution Logs:** `logs/` contains examples of raw strace output logs from package and installer analyses.
 
 ## Architecture
 
