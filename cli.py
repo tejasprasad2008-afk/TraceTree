@@ -598,8 +598,11 @@ def analyze(
                 render_ai_triage_panel("Legs 3 & 4: Anomaly Feature Vector", feature_results)
 
                 # 3. Legs 5 & 8: False Positive Jury
+                all_sig_names = [m["name"] for m in sig_matches] if sig_matches else []
                 matched_rule = {
-                    "rule_name": sig_matches[0]["name"] if sig_matches else "ML_Anomaly_Detection",
+                    "rule_name": all_sig_names[0] if all_sig_names else "ML_Anomaly_Detection",
+                    "all_signatures": all_sig_names,
+                    "temporal_patterns": [p.get("pattern", str(p)) for p in temp_patterns] if temp_patterns else [],
                     "severity": confidence / 10.0 if confidence else 5.0
                 }
                 package_metadata = {
@@ -613,7 +616,9 @@ def analyze(
                 render_ai_triage_panel("Legs 5 & 8: False Positive Jury", triage_results.__dict__)
                 ai_triage_ran = True
 
-                # Override verdict if FP Juror says FALSE_POSITIVE
+                # Hard guard: LLM override only allowed when deterministic rules permit.
+                # triage_false_positive() applies the primary guards; this is a defence-in-depth
+                # check in case a new LLM or prompt change regresses the behaviour.
                 if triage_results.is_false_positive():
                     console.print("[bold green]✔ AI False Positive Jury has OVERRIDDEN the verdict to CLEAN![/]")
                     is_malicious = False

@@ -351,11 +351,99 @@ class AIMeshOrchestrator:
     # =========================================================================
     # LEGS 5 & 8: YARA Signatures & Temporal Sequences (False Positive Juror)
     # =========================================================================
+    # Signatures that must never be cleared as false positives regardless of LLM output.
+    _HARDBLOCK_SIGNATURES = frozenset({
+        "process_injection",
+        "injection",
+        "container_escape",
+        "privilege_escalation",
+        "rootkit",
+        "keylogger",
+    })
+    # Severity threshold above which LLM is not consulted — verdict stays SUSPICIOUS.
+    _HARDBLOCK_SEVERITY = 8.0
+
+    def _check_hard_blocks(
+        self,
+        matched_rule: Dict[str, Any],
+        package_metadata: Dict[str, Any],
+    ) -> Optional["TriageResult"]:
+        """
+        Returns a forced SUSPICIOUS TriageResult if any deterministic hard-block
+        condition is met. Returns None when the LLM may proceed.
+
+        Hard blocks (LLM cannot override):
+        1. Severity >= _HARDBLOCK_SEVERITY
+        2. Any matched signature in _HARDBLOCK_SIGNATURES
+        3. Package name looks like a hex hash / random sample filename
+        """
+        import re
+
+        severity = float(matched_rule.get("severity", 0.0))
+        all_sigs: List[str] = list(matched_rule.get("all_signatures", []))
+        if matched_rule.get("rule_name"):
+            all_sigs.append(matched_rule["rule_name"])
+        pkg_name: str = str(package_metadata.get("name", ""))
+
+        # Block 1: high severity
+        if severity >= self._HARDBLOCK_SEVERITY:
+            reason = (
+                f"HARD BLOCK: severity {severity:.1f} >= {self._HARDBLOCK_SEVERITY}. "
+                "LLM override disabled for critical-severity detections."
+            )
+            log.warning(f"triage_false_positive hard block (severity): {reason}")
+            return TriageResult(
+                verdict="SUSPICIOUS",
+                confidence=1.0,
+                mitigation_applied=False,
+                reasoning=reason,
+            )
+
+        # Block 2: injection / escape / rootkit signatures
+        lower_sigs = [s.lower() for s in all_sigs]
+        for sig in lower_sigs:
+            for blocked in self._HARDBLOCK_SIGNATURES:
+                if blocked in sig:
+                    reason = (
+                        f"HARD BLOCK: matched signature '{sig}' contains blocked keyword '{blocked}'. "
+                        "LLM override disabled for injection/escape/rootkit detections."
+                    )
+                    log.warning(f"triage_false_positive hard block (signature): {reason}")
+                    return TriageResult(
+                        verdict="SUSPICIOUS",
+                        confidence=1.0,
+                        mitigation_applied=False,
+                        reasoning=reason,
+                    )
+
+        # Block 3: package name looks like a hex hash or random sample artifact
+        basename = Path(pkg_name).name
+        if re.fullmatch(r"[0-9a-fA-F]{16,}", basename) or re.fullmatch(r"[0-9a-fA-F]{16,}.*", basename):
+            reason = (
+                f"HARD BLOCK: package name '{basename}' matches hex-hash pattern typical of malware samples. "
+                "LLM override disabled."
+            )
+            log.warning(f"triage_false_positive hard block (hash name): {reason}")
+            return TriageResult(
+                verdict="SUSPICIOUS",
+                confidence=1.0,
+                mitigation_applied=False,
+                reasoning=reason,
+            )
+
+        return None
+
     def triage_false_positive(self, matched_rule: Dict[str, Any], package_metadata: Dict[str, Any]) -> "TriageResult":
         """
         Acts as a False Positive Juror. Evaluates triggered alerts against
         baseline context and triages false alarms using rules configured in data/ai_triage_rules.json.
         """
+        # Deterministic hard blocks run before any LLM call.
+        # These represent threats where a 7B LLM has no authority to override.
+        hard_block = self._check_hard_blocks(matched_rule, package_metadata)
+        if hard_block is not None:
+            return hard_block
+
         # Load local heuristics
         heuristics_data = {}
         rules_path = Path(__file__).parent.parent / "data" / "ai_triage_rules.json"
