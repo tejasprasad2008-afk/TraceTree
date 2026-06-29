@@ -314,6 +314,52 @@ cascade-analyze mcp --npm some-package --output json
 
 6. **Baseline comparison** — Compares syscall profiles against hardcoded baselines for 5 server types: `filesystem`, `github`, `postgres`, `fetch`, `shell`.
 
+## Repository Structure
+
+```
+.
+├── api/                        # API implementation stubs
+├── codebase-analysis-docs/     # System architecture documents and knowledge guides
+├── data/                       # Behavioral signatures, rules, and training datasets (Example/Training Data)
+├── docs/                       # Documentation assets (e.g., banners)
+├── examples/                   # Code examples demonstrating TraceTree functionality (Example Data)
+├── frontend/                   # Next.js/React web dashboard (Implementation)
+├── graph/                      # NetworkX directed graph builder for process tracing (Implementation)
+├── hooks/                      # Git/Shell hooks for background monitoring (Implementation)
+├── logs/                       # Execution trace logs and strace outputs (Example/Run Data)
+├── macapp/                     # Native macOS app code (SwiftUI) (Implementation)
+├── mascot/                     # Console mascot animation (ASCII spider) (Implementation)
+├── mcp/                        # MCP server security testing module (Implementation)
+├── ml/                         # Machine learning classification and anomaly detection (Implementation)
+├── monitor/                    # Core syscall parser, YARA matching, and timelines (Implementation)
+├── orchestrator/               # TypeScript-based multi-agent coordination server (Implementation)
+├── repocheckai/                # Repository analysis engine (TypeScript/Node) (Implementation)
+├── samples/                    # Packaged malware and benign files for sandbox tests (Example/Test Data)
+├── sandbox/                    # Docker container manager and strace sandbox (Implementation)
+├── test_targets/               # Mock packages/servers used to test detection (Example/Test Data)
+├── tests/                      # Unit, integration, and system tests
+├── watcher/                    # Local file system change listener daemon (Implementation)
+└── worker/                     # Background task execution worker (Implementation)
+```
+
+### Core Implementation Files
+*   **System Call Analysis & Rules:** Found in `monitor/` (parsers, signature engines, temporal analysis, differential tests).
+*   **Sandbox Orchestration:** Located in `sandbox/` (manages isolated Docker execution and strace hooks).
+*   **ML Detection:** Located in `ml/` (trained models, trainers, and detectors).
+*   **Agent Shield (MCP):** Found in `mcp/` (probes, sandboxing, client simulation, and threat classifiers).
+*   **User Interfaces:**
+    *   **CLI:** Main entrypoint in `cli.py`.
+    *   **Web Dashboard:** Standard web-based panel in `frontend/`.
+    *   **macOS Application:** Swift-based GUI in `macapp/`.
+    *   **Repository Analyser (RepoCheckAI):** Code quality & structure inspection CLI in `repocheckai/`.
+
+### Example Data & Samples
+*   **Behavioral Signatures & Rules:** `data/signatures.json` contains the JSON definitions of the 8 default behaviors traced by TraceTree.
+*   **Test Malware & Benign Files:** `samples/` contains file payloads like `mirai.zip` used for sandboxing validation.
+*   **Mock Verification Targets:** `test_targets/` contains dummy Python and Node packages (`benign_pkg`, `malicious_pkg`, `adversarial_mcp_server`) used to run sandbox integration tests.
+*   **Examples/Demo Scripts:** `examples/` contains scripts (such as `examples/mcp_rce_detection_example.py`) demonstrating how to use the monitoring API.
+*   **Execution Logs:** `logs/` contains examples of raw strace output logs from package and installer analyses.
+
 ## Architecture
 
 **`sandbox/`** — Docker container lifecycle management. Builds `cascade-sandbox:latest` from a Dockerfile based on `python:3.11-slim` with strace, wine64, p7zip-full, cabextract, Node.js, and npm. Drops the network interface (`ip link set eth0 down`) before target execution. Supports pip, npm, DMG, and EXE targets. Returns a strace log path or empty string on failure.
