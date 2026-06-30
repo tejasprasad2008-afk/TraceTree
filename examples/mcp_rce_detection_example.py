@@ -11,7 +11,6 @@ This example demonstrates:
 4. Combining ML detection with signature-based detection
 """
 
-import json
 from pathlib import Path
 from monitor.mcp_signatures import load_mcp_signatures, match_mcp_signatures
 from monitor.mcp_report import generate_mcp_rce_report, calculate_overall_confidence

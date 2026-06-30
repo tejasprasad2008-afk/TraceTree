@@ -16,7 +16,7 @@ for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
     if _p not in os.environ.get("PATH", "").split(os.pathsep):
         os.environ["PATH"] = f"{_p}{os.pathsep}{os.environ.get('PATH', '')}"
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
 log = logging.getLogger(__name__)
 

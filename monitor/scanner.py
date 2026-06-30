@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Generator, Tuple
 from monitor.yara import SCAN_EXCLUDE_EXTENSIONS, SCAN_EXCLUDE_DIRS
+from typing import List, Dict, Any, Generator
 
 log = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ def scan_file_for_secrets(file_path: Path, skip_yara: bool = True) -> Generator[
                     }
 
                 # 4. Check for malicious heuristics (# noscan or # nosec suppresses)
-                if "# noscan" in line or "# nosec" in line:
+                if re.search(r"(^|\s)#\s*(noscan|nosec)\b", line):
                     continue
                 for h in MALICIOUS_HEURISTICS:
                     if h["regex"].search(stripped_line):

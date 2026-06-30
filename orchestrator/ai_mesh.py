@@ -19,7 +19,6 @@ from typing import Dict, Any, List, Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.style import Style
 
 log = logging.getLogger("tracetree.ai_mesh")
 console = Console()

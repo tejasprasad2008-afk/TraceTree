@@ -2,7 +2,6 @@ import sys
 import json
 import logging
 import subprocess
-import os
 
 # Configure logging to stderr
 logging.basicConfig(

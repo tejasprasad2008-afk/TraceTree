@@ -1,5 +1,4 @@
 import os
-import shlex
 import time
 import tarfile
 import tempfile
@@ -239,8 +238,10 @@ cp /tmp/strace.log "$TRACETREE_LOG_PATH"
                 tf.flush()
                 script_path = tf.name
             os.chmod(script_path, 0o700)
-            subprocess.run(["/bin/bash", script_path], env=env_vars, check=True)  # noscan — sandbox intentionally executes bash
-            os.unlink(script_path)
+            try:
+                subprocess.run(["/bin/bash", script_path], env=env_vars, check=True)  # noscan — sandbox intentionally executes bash
+            finally:
+                os.unlink(script_path)
             return str(log_file_path)
         except Exception as e:
             console.print(f"[bold red]Direct Execution Error:[/] {e}")

@@ -1,10 +1,8 @@
-import os
 import pickle
 import numpy as np
 from pathlib import Path
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from typing import Dict, Any, Tuple
-from google.cloud import storage
 
 from rich.console import Console
 
@@ -166,7 +164,7 @@ def _auto_train_or_baseline(model_path: Path):
         console.print("[dim]Auto-training RandomForest from local feature CSV...[/]")
         try:
             from ml.trainer import train_model
-            train_model()
+            train_model(skip_gcs=True)
             if model_path.exists() and model_path.stat().st_size > 0:
                 with open(model_path, "rb") as f:
                     model = pickle.load(f)

@@ -5,7 +5,6 @@ from pathlib import Path
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.console import Console
 from sklearn.ensemble import RandomForestClassifier
-from google.cloud import storage
 
 _FEATURE_COLUMNS = [
     "node_count", "edge_count", "network_conn_count",
@@ -42,7 +41,7 @@ def _load_features_from_csv(csv_path: Path):
     return X, y
 
 
-def train_model():
+def train_model(skip_gcs: bool = False):
     console = Console()
 
     base_dir = Path(__file__).parent.parent
@@ -52,6 +51,7 @@ def train_model():
     X, y = _load_features_from_csv(csv_path)
     if X:
         console.print(f"[cyan]Loaded {len(X)} samples from {csv_path.name}. Skipping sandbox re-run.[/]")
+        from ml.detector import clear_model_cache  # noqa: F401 (used below after model saved)
     else:
         console.print("[cyan]No usable CSV found — running sandbox on package lists...[/]")
         malicious_pkgs = load_dataset(base_dir / "data" / "malicious_packages_expanded.txt")
@@ -132,16 +132,17 @@ def train_model():
 
     console.print(f"[bold green]✔ Model efficiently saved natively to {model_path}[/]")
     
-    # Sync pipeline state cleanly with remote target GCS tracking endpoint natively
-    try:
-        console.print("[cyan]Pushing weights into global Google Cloud Storage cache (`cascade-analyzer-models`)...[/]")
-        client = storage.Client() # Expects GOOGLE_APPLICATION_CREDENTIALS or gcloud auth
-        bucket = client.bucket("cascade-analyzer-models")
-        blob = bucket.blob("model.pkl")
-        blob.upload_from_filename(str(model_path))
-        console.print("[bold green]✔ Model uploaded directly cleanly to remote GCS successfully![/]")
-    except Exception as e:
-        console.print(f"[bold yellow]⚠ GCS Auth Upload Skipped (Non-Fatal):[/] {e}")
+    if not skip_gcs:
+        try:
+            console.print("[cyan]Pushing weights into global Google Cloud Storage cache (`cascade-analyzer-models`)...[/]")
+            from google.cloud import storage  # lazy import — optional dependency
+            client = storage.Client()  # Expects GOOGLE_APPLICATION_CREDENTIALS or gcloud auth
+            bucket = client.bucket("cascade-analyzer-models")
+            blob = bucket.blob("model.pkl")
+            blob.upload_from_filename(str(model_path))
+            console.print("[bold green]✔ Model uploaded directly cleanly to remote GCS successfully![/]")
+        except Exception as e:
+            console.print(f"[bold yellow]⚠ GCS Auth Upload Skipped (Non-Fatal):[/] {e}")
 
 if __name__ == "__main__":
     train_model()

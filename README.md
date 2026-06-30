@@ -158,7 +158,7 @@ pip install -e .
 ### Run an Analysis
 
 ```bash
-cascade-analyze requests
+cascade-analyze --help
 ```
 
 Output:
