@@ -1899,19 +1899,23 @@ def launch_dashboard():
 
 @app.command(name="dashboard")
 def dashboard_cmd():
-    """Launch the TraceTree API engine and frontend web dashboard concurrently."""
-    launch_dashboard()
+    """Dashboard is being rebuilt — unavailable in this version."""
+    console.print("[bold yellow]⚠ Dashboard command is temporarily disabled while a new dashboard is being developed.[/]")
+    console.print("[dim]It will return in a future release.[/]")
+    raise typer.Exit(1)
 
 
 dashboard_cli = typer.Typer(
     name="cascade-dashboard",
-    help="Unified dashboard launcher for the database API engine and frontend.",
+    help="Unified dashboard launcher (temporarily disabled).",
 )
 
 @dashboard_cli.command()
 def _dashboard_cmd():
-    """Unified dashboard launcher for the database API engine and frontend."""
-    launch_dashboard()
+    """Dashboard is being rebuilt — unavailable in this version."""
+    console.print("[bold yellow]⚠ Dashboard command is temporarily disabled while a new dashboard is being developed.[/]")
+    console.print("[dim]It will return in a future release.[/]")
+    raise typer.Exit(1)
 
 
 if __name__ == "__main__":
