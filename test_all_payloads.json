@@ -1,13 +1,13 @@
 {
   "metadata": {
-    "generated_at": "2026-06-16T04:03:48.178122",
+    "generated_at": "2026-04-21T21:52:47.639417",
     "disclosure": "OX Security April 2026",
     "total_payloads": 24,
     "families": [
-      "marketplace_poisoning",
       "command_execution",
+      "ui_injection",
       "json_config_rce",
-      "ui_injection"
+      "marketplace_poisoning"
     ]
   },
   "payloads": [

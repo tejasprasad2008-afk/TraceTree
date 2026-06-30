@@ -59,6 +59,18 @@ next-env.d.ts
 test-results/
 playwright-results/
 
+# --- macOS App / Build Artifacts ---
+TraceTree.app/
+TraceTree.spec
+macapp/.build/
+macapp/.swiftpm/
+
+# --- Runtime Logs ---
+logs/
+
+# --- Third-party repos cloned into project root ---
+repocheckai/
+
 # --- OS / Misc ---
 .AppleDouble
 .LSOverride

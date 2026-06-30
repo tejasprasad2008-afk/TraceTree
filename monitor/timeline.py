@@ -12,13 +12,8 @@ Usage:
 """
 
 from typing import List, Dict, Any
-from typing import List, Dict, Any
-from typing import Any, Dict, List
 
 from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
-from typing import List, Dict, Any
-from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
-from monitor.utils import KNOWN_SAFE_NETWORKS, is_sensitive_path
 
 # --------------------------------------------------------------------------- #
 #  Temporal pattern definitions
@@ -128,7 +123,7 @@ def _check_rapid_file_enumeration(events: List[Dict[str, Any]]) -> List[Dict[str
     """
     matches: List[Dict[str, Any]] = []
     window_ms = 1000.0
-    threshold = 10
+    threshold = 50  # pip reads 300+ stdlib files; 10 caused constant false positives
 
     openat_events = [e for e in events if e["type"] in ("openat", "read")]
     if len(openat_events) < threshold:
@@ -175,8 +170,11 @@ def _check_burst_process_spawn(events: List[Dict[str, Any]]) -> List[Dict[str, A
     window_ms = 2000.0
     threshold = 5
 
+    # Exclude benign execve (e.g. pip's PATH-search attempts for uname/lsb_release)
     spawn_events = [
-        e for e in events if e["type"] in ("clone", "fork", "vfork", "execve")
+        e for e in events
+        if e["type"] in ("clone", "fork", "vfork")
+        or (e["type"] == "execve" and not e.get("details", {}).get("benign"))
     ]
     if len(spawn_events) < threshold:
         return matches

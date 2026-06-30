@@ -13,6 +13,11 @@ BENIGN_BINARIES: FrozenSet[str] = frozenset([
     "/usr/local/bin/npm", "/usr/bin/npm",
     "/usr/local/bin/node", "/usr/bin/node",
     "/usr/bin/ip", "/sbin/ip",
+    # pip calls these for platform fingerprinting (wheel tag selection)
+    "/usr/bin/uname", "/bin/uname", "/usr/local/bin/uname",
+    "/usr/sbin/uname", "/usr/local/sbin/uname", "/sbin/uname",
+    "/usr/bin/lsb_release", "/bin/lsb_release", "/usr/local/bin/lsb_release",
+    "/usr/sbin/lsb_release", "/usr/local/sbin/lsb_release", "/sbin/lsb_release",
 ])
 
 KNOWN_SAFE_NETWORKS: FrozenSet[str] = frozenset([

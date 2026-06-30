@@ -491,10 +491,10 @@ def parse_strace_log(log_path: str) -> Dict[str, Any]:
             # mprotect with PROT_EXEC on RW memory is a red flag
             has_prot_exec = "PROT_EXEC" in args_raw
             if has_prot_exec:
-                severity = max(severity, 9.0)
-                suspicious_flags.append(
-                    f"Executable memory mapping ({syscall}) in PID {pid} — possible code injection"
-                )
+                # Low base severity — shared library loading does this constantly.
+                # The process_injection signature captures PROT_EXEC + non-standard
+                # binary together, which is the real high-severity pattern.
+                severity = max(severity, 3.0)
             syscalls_executed.append(_make_event(
                 syscall,
                 f"flags={args_raw.split(',')[0] if ',' in args_raw else args_raw[:80]}",
