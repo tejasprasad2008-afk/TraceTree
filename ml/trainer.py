@@ -29,7 +29,7 @@ def _load_features_from_csv(csv_path: Path):
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         cols = reader.fieldnames or []
-        if not any(c in cols for c in _FEATURE_COLUMNS):
+        if not all(c in cols for c in _FEATURE_COLUMNS) or "is_malicious" not in cols:
             return [], []
         for row in reader:
             try:
