@@ -57,6 +57,18 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# --- macOS App / Build Artifacts ---
+TraceTree.app/
+TraceTree.spec
+macapp/.build/
+macapp/.swiftpm/
+
+# --- Runtime Logs ---
+logs/
+
+# --- Third-party repos cloned into project root ---
+repocheckai/
+
 # --- OS / Misc ---
 .AppleDouble
 .LSOverride

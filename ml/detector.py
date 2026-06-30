@@ -137,44 +137,46 @@ def get_ml_model(version: str = None):
             except Exception as e:
                 console.print(f"[bold yellow]Failed to load version {version}: {e}[/]")
     
-    # Fall back to legacy path or GCS
+    # Load from local path only — GCS is never touched during analyze (offline-safe)
     model_path = Path(__file__).parent / "model.pkl"
 
-    if not model_path.exists():
-        console.print(
-            "[dim]Local model.pkl not found. Attempting anonymous GCS fetch "
-            "from 'cascade-analyzer-models'...[/]"
-        )
-        try:
-            import urllib.request
-            url = "https://storage.googleapis.com/cascade-analyzer-models/model.pkl"
-            model_path.parent.mkdir(exist_ok=True)
-            urllib.request.urlretrieve(url, str(model_path))
-            console.print("[bold green]✔ Synced model from GCS.[/]")
-        except Exception as e:
-            console.print(f"[bold yellow]⚠ GCS download skipped:[/] {e}")
-            console.print(
-                "[dim italic]Falling back to IsolationForest zero-shot detection.[/]"
-            )
-            _MODEL_CACHE = train_baseline_model()
-            return _MODEL_CACHE
-
     try:
-        if model_path.exists() and model_path.stat().st_size == 0:
-            # 0-byte file is expected to trigger fallback cleanly
-            _MODEL_CACHE = train_baseline_model()
+        if not model_path.exists() or model_path.stat().st_size == 0:
+            _MODEL_CACHE = _auto_train_or_baseline(model_path)
             return _MODEL_CACHE
         with open(model_path, "rb") as f:
             _MODEL_CACHE = pickle.load(f)
             return _MODEL_CACHE
     except (EOFError, pickle.UnpicklingError):
-        # Graceful fallback without alarming the user
-        _MODEL_CACHE = train_baseline_model()
+        _MODEL_CACHE = _auto_train_or_baseline(model_path)
         return _MODEL_CACHE
     except Exception as e:
         console.print(f"[bold red]Local model load failed:[/] {e}")
-        _MODEL_CACHE = train_baseline_model()
+        _MODEL_CACHE = _auto_train_or_baseline(model_path)
         return _MODEL_CACHE
+
+
+def _auto_train_or_baseline(model_path: Path):
+    """
+    Try to train RandomForest from the local feature CSV before giving up
+    and falling back to IsolationForest.
+    """
+    csv_path = model_path.parent.parent / "data" / "ingested_training_data.csv"
+    if csv_path.exists() and csv_path.stat().st_size > 0:
+        console.print("[dim]Auto-training RandomForest from local feature CSV...[/]")
+        try:
+            from ml.trainer import train_model
+            train_model()
+            if model_path.exists() and model_path.stat().st_size > 0:
+                with open(model_path, "rb") as f:
+                    model = pickle.load(f)
+                console.print("[bold green]✔ Auto-trained RandomForest model ready.[/]")
+                return model
+        except Exception as e:
+            console.print(f"[bold yellow]⚠ Auto-train failed:[/] {e}")
+
+    console.print("[dim italic]Falling back to IsolationForest zero-shot detection.[/]")
+    return train_baseline_model()
 
 
 def update_model_from_gcs():

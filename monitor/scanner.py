@@ -171,7 +171,9 @@ def scan_file_for_secrets(file_path: Path, skip_yara: bool = True) -> Generator[
                         "match": None
                     }
 
-                # 4. Check for malicious heuristics
+                # 4. Check for malicious heuristics (# noscan or # nosec suppresses)
+                if "# noscan" in line or "# nosec" in line:
+                    continue
                 for h in MALICIOUS_HEURISTICS:
                     if h["regex"].search(stripped_line):
                         yield {

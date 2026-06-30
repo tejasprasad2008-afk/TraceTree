@@ -766,7 +766,7 @@ def train_cli():
             "[bold yellow]Authentication Required[/]\n\n"
             "To legitimately fetch live malware samples from the internet,\n"
             "you need a MalwareBazaar Auth Key.\n\n"
-            "[dim]If you do not have one, you can press Enter to skip and train only on local cached data.[/]",
+            "[dim]If you do not have one, you can press Enter to skip (model will train on the local malicious_packages.txt dataset only).[/]",
             border_style="yellow", expand=False
         )))
         console.print()
@@ -776,7 +776,7 @@ def train_cli():
             os.environ["MALWAREBAZAAR_AUTH_KEY"] = auth_key
             console.print("\n[bold green]✔ Key accepted. Initiating online data ingestion...[/]\n")
         else:
-            console.print("\n[dim italic]No key provided. Yielding to local cached datasets...[/]\n")
+            console.print("\n[dim italic]No key provided. Training on local malicious_packages.txt dataset...[/]\n")
     else:
         console.print("[bold green]✔ Found MALWAREBAZAAR_AUTH_KEY in environment. Initiating fetch...[/]\n")
 

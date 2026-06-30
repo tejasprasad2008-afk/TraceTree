@@ -71,6 +71,11 @@ BENIGN_BINARIES = frozenset([
     "/usr/local/bin/npm", "/usr/bin/npm",
     "/usr/local/bin/node", "/usr/bin/node",
     "/usr/bin/ip", "/sbin/ip",
+    # pip calls these for platform fingerprinting (wheel tag selection)
+    "/usr/bin/uname", "/bin/uname", "/usr/local/bin/uname",
+    "/usr/sbin/uname", "/usr/local/sbin/uname", "/sbin/uname",
+    "/usr/bin/lsb_release", "/bin/lsb_release", "/usr/local/bin/lsb_release",
+    "/usr/sbin/lsb_release", "/usr/local/sbin/lsb_release", "/sbin/lsb_release",
 ])
 
 # Paths that are clearly benign when accessed during an install.
@@ -566,7 +571,10 @@ def parse_strace_log(log_path: str) -> Dict[str, Any]:
             # mprotect with PROT_EXEC on RW memory is a red flag
             has_prot_exec = "PROT_EXEC" in args_raw
             if has_prot_exec:
-                severity = max(severity, 9.0)
+                # Low base severity — shared library loading does this constantly.
+                # The process_injection signature captures PROT_EXEC + non-standard
+                # binary together, which is the real high-severity pattern.
+                severity = max(severity, 3.0)
                 suspicious_flags.append(
                     f"Executable memory mapping ({syscall}) in PID {pid} — possible code injection"
                 )
