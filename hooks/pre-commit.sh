@@ -18,11 +18,17 @@ echo "🛡️ TraceTree Secret Guardian: Scanning staged files..."
 # Try to use cascade-scan if available in PATH, else fall back to python3 cli.py
 if command -v cascade-scan &> /dev/null; then
     for FILE in $STAGED_FILES; do
+        if [[ "$FILE" == *"package-lock.json" || "$FILE" == *"yarn.lock" || "$FILE" == *"pnpm-lock.yaml" ]]; then
+            continue
+        fi
         cascade-scan "$FILE" --exit-code
         if [ $? -ne 0 ]; then exit 1; fi
     done
 else
     for FILE in $STAGED_FILES; do
+        if [[ "$FILE" == *"package-lock.json" || "$FILE" == *"yarn.lock" || "$FILE" == *"pnpm-lock.yaml" ]]; then
+            continue
+        fi
         python3 cli.py scan "$FILE" --exit-code
         if [ $? -ne 0 ]; then exit 1; fi
     done

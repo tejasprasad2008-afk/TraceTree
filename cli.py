@@ -1841,6 +1841,12 @@ def launch_dashboard():
     )
     console.print(Panel(panel_content, border_style="bold green", expand=False))
     
+    # Auto-open browser
+    import webbrowser
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
     # Spawn the interactive prompt thread in the background
     def prompt_loop():
         # Give some time for startup logs to settle
@@ -1899,23 +1905,19 @@ def launch_dashboard():
 
 @app.command(name="dashboard")
 def dashboard_cmd():
-    """Dashboard is being rebuilt — unavailable in this version."""
-    console.print("[bold yellow]⚠ Dashboard command is temporarily disabled while a new dashboard is being developed.[/]")
-    console.print("[dim]It will return in a future release.[/]")
-    raise typer.Exit(1)
+    """Launch the TraceTree local web dashboard."""
+    launch_dashboard()
 
 
 dashboard_cli = typer.Typer(
     name="cascade-dashboard",
-    help="Unified dashboard launcher (temporarily disabled).",
+    help="Unified dashboard launcher.",
 )
 
 @dashboard_cli.command()
 def _dashboard_cmd():
-    """Dashboard is being rebuilt — unavailable in this version."""
-    console.print("[bold yellow]⚠ Dashboard command is temporarily disabled while a new dashboard is being developed.[/]")
-    console.print("[dim]It will return in a future release.[/]")
-    raise typer.Exit(1)
+    """Launch the TraceTree local web dashboard."""
+    launch_dashboard()
 
 
 if __name__ == "__main__":

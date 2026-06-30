@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .rainbow {
+    animation: rainbow 4s linear infinite;
+  }
+  
+  .pulse-glow {
+    animation: pulse-glow 1.5s infinite;
+  }
+  
+  .pulse-glow-yellow {
+    animation: pulse-glow-yellow 1.5s infinite;
+  }
+
+  .pulse-glow-green {
+    animation: pulse-glow-green 1.5s infinite;
+  }
+  
+  .blink {
+    animation: blink 1s step-end infinite;
+  }
+  
+  .bg-90s-tile {
+    background-color: #c0c0c0;
+    background-image:
+      linear-gradient(45deg, #b8b8b8 25%, transparent 25%),
+      linear-gradient(-45deg, #b8b8b8 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #b8b8b8 75%),
+      linear-gradient(-45deg, transparent 75%, #b8b8b8 75%);
+    background-size: 4px 4px;
+    background-position: 0 0, 0 2px, 2px -2px, -2px 0;
+  }
+  
+  .bg-construction {
+    background: repeating-linear-gradient(45deg, #ffff00, #ffff00 10px, #000000 10px, #000000 20px);
+  }
+  
+  .hr-groove {
+    border-top: 2px solid #808080;
+    border-bottom: 2px solid #ffffff;
+    height: 0px;
+  }
+}
+
+@keyframes rainbow {
+  0% { color: #ff0000; }
+  17% { color: #ff8000; }
+  33% { color: #ffff00; }
+  50% { color: #00ff00; }
+  67% { color: #0000ff; }
+  83% { color: #8000ff; }
+  100% { color: #ff0000; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 10px 4px rgba(255, 0, 0, 0.5);
+  }
+}
+
+@keyframes pulse-glow-yellow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 0, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 10px 4px rgba(255, 255, 0, 0.5);
+  }
+}
+
+@keyframes pulse-glow-green {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 255, 0, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 10px 4px rgba(0, 255, 0, 0.5);
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rainbow {
+    animation: none;
+    color: #ff0000;
+  }
+  .pulse-glow {
+    animation: none;
+  }
+  .pulse-glow-yellow {
+    animation: none;
+  }
+  .pulse-glow-green {
+    animation: none;
+  }
+  .blink {
+    animation: none;
+  }
+}

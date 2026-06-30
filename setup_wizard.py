@@ -362,8 +362,9 @@ def main():
     if success:
         console.print("\n[bold green]🎉 TraceTree setup completed successfully![/]\n")
         if mode == "2":
-            console.print("Run [bold cyan]cascade-analyze analyze <package>[/] to start analyzing packages.\n")
-            console.print("[dim]Note: the dashboard command is temporarily unavailable while a new one is being developed.[/]\n")
+            console.print("You can launch the unified dashboard using:")
+            console.print("   [bold cyan]cascade-dashboard[/] (if installed via pip)")
+            console.print("   or [bold cyan]python3 cli.py dashboard[/]\n")
     else:
         console.print("\n[bold red]❌ TraceTree setup failed or was partially completed.[/]\n")
         sys.exit(1)
