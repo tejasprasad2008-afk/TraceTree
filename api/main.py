@@ -1,9 +1,12 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import uuid
 import os
+import subprocess
+import sys
 
 # --- Security ---
 # Load API keys from environment variable for production
@@ -181,6 +184,63 @@ async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
             GraphEdge(data=GraphEdgeData(source="p3", target="f1", label="openat"))
         ]
     )
+
+class CommandRequest(BaseModel):
+    command: str
+
+@app.post("/api/execute")
+async def execute_command(request: CommandRequest):
+    cmd = request.command.strip()
+    
+    # Validation: Only allow running python3 cli.py or python cli.py or cascade-analyze
+    is_valid = (
+        cmd.startswith("python3 cli.py") or 
+        cmd.startswith("python cli.py") or 
+        cmd.startswith("cascade-analyze") or
+        cmd.startswith("./cli.py")
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=400, 
+            detail="Forbidden. You can only execute TraceTree CLI commands (e.g., 'python3 cli.py analyze')."
+        )
+    
+    # We want to make sure it runs the virtual environment's python if available
+    python_exe = sys.executable
+    cmd_parts = cmd.split(" ")
+    if cmd_parts[0] in ["python3", "python", "./cli.py"]:
+        cmd_parts[0] = python_exe
+        if len(cmd_parts) > 1 and cmd_parts[1] == "cli.py":
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cmd_parts[1] = os.path.join(project_root, "cli.py")
+        cmd = " ".join(cmd_parts)
+    elif cmd_parts[0] == "cascade-analyze":
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cli_path = os.path.join(project_root, "cli.py")
+        cmd_parts[0] = python_exe
+        cmd_parts.insert(1, cli_path)
+        cmd = " ".join(cmd_parts)
+
+    def run_process():
+        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        proc = subprocess.Popen(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env
+        )
+        
+        for line in iter(proc.stdout.readline, ""):
+            yield f"data: {line}\n\n"
+            
+        proc.stdout.close()
+        proc.wait()
+        yield f"data: \n--- PROCESS FINISHED WITH CODE {proc.returncode} ---\n\n"
+
+    return StreamingResponse(run_process(), media_type="text/event-stream")
 
 @app.get("/")
 async def root():

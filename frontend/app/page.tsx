@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Win95Card from "../components/Win95Card";
 import BevelButton from "../components/BevelButton";
@@ -11,6 +11,7 @@ import TemporalPatterns from "../components/TemporalPatterns";
 import NetworkActivity from "../components/NetworkActivity";
 import OllamaTriage from "../components/OllamaTriage";
 import StatusBar from "../components/StatusBar";
+import MSDosPrompt from "../components/MSDosPrompt";
 
 // Dynamically import react-fast-marquee to avoid SSR mismatches
 const Marquee = dynamic(() => import("react-fast-marquee"), { ssr: false });
@@ -22,7 +23,6 @@ interface SyscallEvent {
   target: string;
   severity: "LOW" | "MED" | "HIGH";
   flag: boolean;
-  isNew?: boolean;
 }
 
 interface TemporalPattern {
@@ -43,6 +43,7 @@ interface ScanRecord {
   package_name: string;
   verdict: "clean" | "malicious";
   confidence: number;
+  findings?: string;
 }
 
 interface ScanStatus {
@@ -62,265 +63,405 @@ interface ScanStatus {
     uptime_seconds: number;
     model_type: string;
     ollama_online: boolean;
+    api_online: boolean;
+    orchestrator_online: boolean;
   };
 }
 
-// 90s-styled retro mock data
-const mockCleanScan: ScanStatus = {
-  package_name: "requests",
-  status: "clean",
-  confidence: 12,
-  stage: "complete",
-  total_severity: 0.8,
-  events: [
-    { id: 101, syscall: "openat", pid: 2110, target: "/usr/lib/python3.11/site-packages/requests/__init__.py", severity: "LOW", flag: false },
-    { id: 102, syscall: "openat", pid: 2110, target: "/etc/resolv.conf", severity: "LOW", flag: false },
-    { id: 103, syscall: "connect", pid: 2110, target: "151.101.1.69", severity: "LOW", flag: false },
-    { id: 104, syscall: "brk", pid: 2110, target: "memory_allocation", severity: "LOW", flag: false }
-  ],
-  temporal_patterns: [],
-  ollama_triage: "DEVSECOPS TRIAGE ANALYSIS:\nPackage 'requests' completed execution within the Docker sandbox. The strace logs indicate typical HTTP library initialization routines (reading local Python libraries and opening system name resolution configurations). One external network connection was established to a safe registry address (151.101.1.69) on port 443. No suspicious file system accesses or process mutations were flagged. Verdict is CLEAN.",
-  network_connections: [
-    { destination: "151.101.1.69", port: 443, classification: "PYPI CDN", verdict: "CLEAN" }
-  ],
-  scan_history: [],
-  stats: { scanned: 42, threats: 7, uptime_seconds: 2520, model_type: "RANDOMFOREST", ollama_online: true }
-};
-
-const mockMaliciousScan: ScanStatus = {
-  package_name: "urllib33",
-  status: "malicious",
-  confidence: 92,
-  stage: "complete",
-  total_severity: 23.5,
-  events: [
-    { id: 1, syscall: "openat", pid: 1530, target: "/etc/shadow", severity: "HIGH", flag: true, isNew: true },
-    { id: 2, syscall: "connect", pid: 1530, target: "45.33.32.156", severity: "HIGH", flag: true, isNew: true },
-    { id: 3, syscall: "dup2", pid: 1531, target: "file_descriptor", severity: "MED", flag: false },
-    { id: 4, syscall: "execve", pid: 1531, target: "/bin/sh", severity: "HIGH", flag: true, isNew: true },
-    { id: 5, syscall: "mprotect", pid: 1530, target: "memory_page", severity: "LOW", flag: false }
-  ],
-  temporal_patterns: [
-    { pattern: "credential_scan_then_exfil", severity: 9, window: "1500-1800 ms" },
-    { pattern: "connect_then_shell", severity: 10, window: "3200 ms" },
-    { pattern: "rapid_file_enumeration", severity: 7, window: "400 ms" }
-  ],
-  ollama_triage: "CRITICAL ALERT: Target package 'urllib33' exhibits classical credential extraction and reverse shell behavior. Process 1530 performed a read on /etc/shadow containing system credential baselines, then immediately initiated a network socket callback to an unclassified external IP address (45.33.32.156) on port 4444. This was followed by process duplication and terminal spawning of /bin/sh. Verdict is 100% MALICIOUS.",
-  network_connections: [
-    { destination: "45.33.32.156", port: 4444, classification: "SUSPICIOUS", verdict: "MALICIOUS" },
-    { destination: "151.101.1.69", port: 443, classification: "PYPI CDN", verdict: "CLEAN" }
-  ],
-  scan_history: [],
-  stats: { scanned: 42, threats: 7, uptime_seconds: 2520, model_type: "RANDOMFOREST", ollama_online: true }
-};
-
-const mockHistory: ScanRecord[] = [
-  { id: "1", package_name: "urllib33", verdict: "malicious", confidence: 92 },
-  { id: "2", package_name: "requests", verdict: "clean", confidence: 12 },
-  { id: "3", package_name: "numpy", verdict: "clean", confidence: 8 },
-  { id: "4", package_name: "boto3-exfil-test", verdict: "malicious", confidence: 99 },
-  { id: "5", package_name: "django-security-shim", verdict: "clean", confidence: 15 }
+const defaultMockHistory: ScanRecord[] = [
+  { id: "h1", package_name: "urllib33", verdict: "malicious", confidence: 92 },
+  { id: "h2", package_name: "requests", verdict: "clean", confidence: 12 },
+  { id: "h3", package_name: "numpy", verdict: "clean", confidence: 8 },
+  { id: "h4", package_name: "boto3-exfil-test", verdict: "malicious", confidence: 99 },
+  { id: "h5", package_name: "django-security-shim", verdict: "clean", confidence: 15 }
 ];
 
 export default function Dashboard() {
   const [data, setData] = useState<ScanStatus>({
-    package_name: "urllib33",
-    status: "malicious",
-    confidence: 92,
-    stage: "complete",
-    total_severity: 23.5,
-    events: mockMaliciousScan.events,
-    temporal_patterns: mockMaliciousScan.temporal_patterns,
-    ollama_triage: mockMaliciousScan.ollama_triage,
-    network_connections: mockMaliciousScan.network_connections,
-    scan_history: mockHistory,
+    package_name: "NONE",
+    status: "idle",
+    confidence: 0,
+    stage: "sandbox",
+    total_severity: 0.0,
+    events: [],
+    temporal_patterns: [],
+    ollama_triage: "Awaiting local console commands...",
+    network_connections: [],
+    scan_history: defaultMockHistory,
     stats: {
       scanned: 42,
       threats: 7,
-      uptime_seconds: 2520,
+      uptime_seconds: 120,
       model_type: "RANDOMFOREST",
-      ollama_online: true
+      ollama_online: false,
+      api_online: false,
+      orchestrator_online: false
     }
   });
 
-  const [inputVal, setInputVal] = useState("");
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [streamedTriage, setStreamedTriage] = useState(mockMaliciousScan.ollama_triage);
-  const [isTriageStreaming, setIsTriageStreaming] = useState(false);
-  const [pollingError, setPollingError] = useState(false);
+  // MS-DOS Command States
+  const [command, setCommand] = useState("python3 cli.py analyze urllib33");
+  const [enableAi, setEnableAi] = useState(true);
+  const [isRunningCommand, setIsRunningCommand] = useState(false);
+  const [terminalOutput, setTerminalOutput] = useState<string[]>([
+    "Microsoft(R) Windows 95",
+    "   (C)Copyright Microsoft Corp 1981-1995.",
+    "",
+    "Welcome to the TraceTree console gateway.",
+    "Select a preset button above or type your command, then press Enter.",
+    ""
+  ]);
 
-  // Poll local backend
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // 1. WebSocket Live Telemetry Connection
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch("http://localhost:8422/api/status");
-        if (res.ok) {
-          const fetchedData = await res.json();
+    let socketTimeout: NodeJS.Timeout;
+
+    const connectWebSocket = () => {
+      console.log("Connecting to Orchestrator WebSocket...");
+      const ws = new WebSocket("ws://localhost:3000/ws/live");
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("Orchestrator WebSocket connected successfully!");
+        setData(prev => ({
+          ...prev,
+          stats: { ...prev.stats, orchestrator_online: true, ollama_online: true }
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const raw = JSON.parse(event.data);
+          const { event: wsEvent, payload } = raw;
+          console.log("WS Telemetry Event:", wsEvent, payload);
+
+          if (wsEvent === "investigation_started") {
+            const pkgName = (payload.prompt || "unknown").replace("CLI Analysis: ", "");
+            setData(prev => ({
+              ...prev,
+              package_name: pkgName,
+              status: "scanning",
+              stage: "sandbox",
+              confidence: 0,
+              total_severity: 0.0,
+              events: [],
+              temporal_patterns: [],
+              network_connections: [],
+              ollama_triage: "AI Engine is analyzing the package behavioral trace..."
+            }));
+          }
+
+          else if (wsEvent === "step_started") {
+            if (payload.stepId === "sandbox") {
+              setData(prev => ({ ...prev, stage: "sandbox", confidence: 20 }));
+            } else if (payload.stepId === "analysis") {
+              setData(prev => ({ ...prev, stage: "randomforest", confidence: 60 }));
+            }
+          }
+
+          else if (wsEvent === "step_completed") {
+            if (payload.stepId === "sandbox" && payload.status === "completed") {
+              setData(prev => ({ ...prev, stage: "parser", confidence: 40 }));
+            } else if (payload.stepId === "analysis" && payload.findings) {
+              let findings = payload.findings;
+              if (typeof findings === "string") {
+                try {
+                  findings = JSON.parse(findings);
+                } catch (e) {
+                  findings = {};
+                }
+              }
+
+              // Map suspicious events
+              const mappedEvents = (findings.events || []).map((e: any, idx: number) => ({
+                id: idx + 1,
+                syscall: e.syscall || "openat",
+                pid: e.pid || 0,
+                target: e.target || e.target_path || "unspecified",
+                severity: e.severity || "LOW",
+                flag: e.flag || false
+              }));
+
+              // Map signatures
+              const mappedPatterns = (findings.behavioral_signatures || []).map((s: any) => ({
+                pattern: s.name || "suspicious_signature",
+                severity: s.severity === "HIGH" ? 9 : s.severity === "MEDIUM" ? 6 : 3,
+                window: s.evidence || "within execution window"
+              }));
+
+              // Map network
+              const mappedNetwork = (findings.network_destinations || []).map((n: any) => ({
+                destination: n.ip || n.host || "unknown",
+                port: n.port || 443,
+                classification: n.classification || "OUTBOUND",
+                verdict: n.is_malicious ? "MALICIOUS" : "CLEAN"
+              }));
+
+              setData(prev => ({
+                ...prev,
+                status: findings.is_malicious ? "malicious" : "clean",
+                confidence: Math.round((findings.confidence_score || 0) * (findings.confidence_score <= 1 ? 100 : 1)),
+                stage: "ollama",
+                total_severity: findings.total_severity || 0.0,
+                events: mappedEvents,
+                temporal_patterns: mappedPatterns,
+                network_connections: mappedNetwork
+              }));
+            }
+          }
+
+          else if (wsEvent === "ai_summary_started") {
+            setData(prev => ({
+              ...prev,
+              ollama_triage: "Ollama is drafting final verification summary..."
+            }));
+          }
+
+          else if (wsEvent === "ai_summary_completed") {
+            setData(prev => ({
+              ...prev,
+              stage: "complete",
+              ollama_triage: payload.summary || "AI Triage analysis complete."
+            }));
+            // Refresh history
+            refreshScanHistory();
+          }
+
+        } catch (e) {
+          console.error("Error parsing WS event", e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.warn("Orchestrator WebSocket disconnected. Retrying in 3s...");
+        setData(prev => ({
+          ...prev,
+          stats: { ...prev.stats, orchestrator_online: false, ollama_online: false }
+        }));
+        socketTimeout = setTimeout(connectWebSocket, 3000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    };
+
+    connectWebSocket();
+    return () => {
+      clearTimeout(socketTimeout);
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
+
+  // 2. Poll API gateway and refresh history
+  const refreshScanHistory = async () => {
+    try {
+      const res = await fetch("http://localhost:3000/api/scans");
+      if (res.ok) {
+        const fetched = await res.json();
+        if (fetched.scans) {
+          const mappedHistory = fetched.scans.map((s: any) => ({
+            id: s.id,
+            package_name: s.target,
+            verdict: s.verdict.toLowerCase() as "clean" | "malicious",
+            confidence: Math.round(s.confidence * (s.confidence <= 1 ? 100 : 1)),
+            findings: s.findings
+          }));
           setData(prev => ({
-            ...fetchedData,
+            ...prev,
+            scan_history: mappedHistory.length > 0 ? mappedHistory : defaultMockHistory,
             stats: {
               ...prev.stats,
-              ...fetchedData.stats
-            },
-            scan_history: prev.scan_history
+              scanned: mappedHistory.length > 0 ? mappedHistory.length : prev.stats.scanned,
+              threats: mappedHistory.length > 0 ? mappedHistory.filter((h: any) => h.verdict === "malicious").length : prev.stats.threats
+            }
           }));
-          setPollingError(false);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch scan history from orchestrator:", err);
+    }
+  };
+
+  // Poll API health status
+  useEffect(() => {
+    const checkApiHealth = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/");
+        if (res.ok) {
+          setData(prev => ({
+            ...prev,
+            stats: { ...prev.stats, api_online: true }
+          }));
         } else {
-          setPollingError(true);
+          setData(prev => ({
+            ...prev,
+            stats: { ...prev.stats, api_online: false }
+          }));
         }
       } catch (err) {
-        setPollingError(true);
+        setData(prev => ({
+          ...prev,
+          stats: { ...prev.stats, api_online: false }
+        }));
       }
     };
 
-    // Only poll if not running a local scan simulation
-    if (!isSimulating) {
-      timer = setInterval(fetchStatus, 2000);
-    }
-    return () => clearInterval(timer);
-  }, [isSimulating]);
+    checkApiHealth();
+    refreshScanHistory();
+    const timer = setInterval(() => {
+      checkApiHealth();
+    }, 4000);
 
-  // Run uptime clock counter
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setData(prev => ({
-        ...prev,
-        stats: {
-          ...prev.stats,
-          uptime_seconds: prev.stats.uptime_seconds + 1
-        }
-      }));
-    }, 1000);
-    return () => clearInterval(interval);
+    return () => clearInterval(timer);
   }, []);
 
-  // Simulating local scan
-  const handleSimulatedScan = (targetName: string) => {
-    if (isSimulating) return;
-    setIsSimulating(true);
-    setIsTriageStreaming(false);
-    setStreamedTriage("");
-
-    const isTargetMalicious =
-      targetName.toLowerCase().includes("malicious") ||
-      targetName.toLowerCase().includes("typo") ||
-      targetName.toLowerCase().includes("hack") ||
-      targetName.toLowerCase().includes("shadow") ||
-      targetName.toLowerCase().includes("urllib33");
-
-    setData(prev => ({
-      ...prev,
-      package_name: targetName,
-      status: "scanning",
-      confidence: 0,
-      stage: "sandbox",
-      events: [],
-      temporal_patterns: [],
-      ollama_triage: "",
-      network_connections: []
-    }));
-
-    // Sandbox phase (1s)
-    setTimeout(() => {
+  // 3. Uptime ticker
+  useEffect(() => {
+    const timer = setInterval(() => {
       setData(prev => ({
         ...prev,
-        confidence: 20,
-        stage: "parser"
+        stats: { ...prev.stats, uptime_seconds: prev.stats.uptime_seconds + 1 }
       }));
-
-      // Parser phase (2s)
-      setTimeout(() => {
-        setData(prev => ({
-          ...prev,
-          confidence: 45,
-          stage: "randomforest",
-          events: isTargetMalicious ? mockMaliciousScan.events.slice(0, 3) : mockCleanScan.events.slice(0, 2)
-        }));
-
-        // RF Model phase (3s)
-        setTimeout(() => {
-          setData(prev => ({
-            ...prev,
-            confidence: isTargetMalicious ? 80 : 10,
-            stage: "ollama",
-            events: isTargetMalicious ? mockMaliciousScan.events : mockCleanScan.events,
-            temporal_patterns: isTargetMalicious ? mockMaliciousScan.temporal_patterns : [],
-            network_connections: isTargetMalicious ? mockMaliciousScan.network_connections : mockCleanScan.network_connections
-          }));
-
-          // Triage phase (4s)
-          setTimeout(() => {
-            const finalVerdict = isTargetMalicious ? "malicious" : "clean";
-            const fullTriageText = isTargetMalicious ? mockMaliciousScan.ollama_triage : mockCleanScan.ollama_triage;
-            
-            setData(prev => ({
-              ...prev,
-              status: finalVerdict,
-              confidence: isTargetMalicious ? 92 : 12,
-              stage: "complete",
-              total_severity: isTargetMalicious ? 23.5 : 0.8,
-              ollama_triage: fullTriageText,
-              stats: {
-                ...prev.stats,
-                scanned: prev.stats.scanned + 1,
-                threats: isTargetMalicious ? prev.stats.threats + 1 : prev.stats.threats
-              },
-              scan_history: [
-                {
-                  id: String(prev.scan_history.length + 1),
-                  package_name: targetName,
-                  verdict: finalVerdict,
-                  confidence: isTargetMalicious ? 92 : 12
-                },
-                ...prev.scan_history
-              ]
-            }));
-
-            // Simulate streaming terminal text
-            setIsTriageStreaming(true);
-            let charIndex = 0;
-            const streamTimer = setInterval(() => {
-              if (charIndex < fullTriageText.length) {
-                setStreamedTriage(fullTriageText.substring(0, charIndex + 2));
-                charIndex += 2;
-              } else {
-                clearInterval(streamTimer);
-                setIsTriageStreaming(false);
-                setIsSimulating(false);
-              }
-            }, 15);
-
-          }, 1000);
-        }, 1000);
-      }, 1000);
     }, 1000);
-  };
+    return () => clearInterval(timer);
+  }, []);
 
-  const loadHistoricalScan = (record: ScanRecord) => {
-    if (isSimulating) return;
-    if (record.verdict === "malicious") {
-      setData(prev => ({
+  // 4. Executing CLI commands through API Gateway
+  const handleExecuteCommand = async () => {
+    if (isRunningCommand || !command.trim()) return;
+
+    setIsRunningCommand(true);
+    let finalCommand = command.trim();
+
+    // Prepare flags: append --gui for telemetry & --ai if checkbox enabled
+    if (finalCommand.includes("analyze") || finalCommand.includes("triage")) {
+      if (!finalCommand.includes("--gui") && !finalCommand.includes("-g")) {
+        finalCommand += " --gui";
+      }
+      if (enableAi && !finalCommand.includes("--ai")) {
+        finalCommand += " --ai";
+      }
+    }
+
+    setTerminalOutput(prev => [
+      ...prev,
+      `> ${finalCommand}`,
+      "Launching local subprocess... Please wait..."
+    ]);
+
+    try {
+      const response = await fetch("http://localhost:8000/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: finalCommand })
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json();
+        setTerminalOutput(prev => [
+          ...prev,
+          `❌ Command Execution Error: ${errBody.detail || "Unknown error occurred"}`
+        ]);
+        setIsRunningCommand(false);
+        return;
+      }
+
+      // Stream output reader
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) {
+        setTerminalOutput(prev => [...prev, "❌ Unable to read output stream."]);
+        setIsRunningCommand(false);
+        return;
+      }
+
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Parse SSE logs (e.g. data: line)
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || ""; // preserve partial line
+
+        for (const rawLine of lines) {
+          if (rawLine.startsWith("data: ")) {
+            const cleanLine = rawLine.substring(6).trimEnd();
+            if (cleanLine) {
+              setTerminalOutput(prev => [...prev, cleanLine]);
+            }
+          }
+        }
+      }
+
+      setIsRunningCommand(false);
+    } catch (err: any) {
+      setTerminalOutput(prev => [
         ...prev,
-        ...mockMaliciousScan,
-        package_name: record.package_name,
-        confidence: record.confidence,
-        scan_history: prev.scan_history
-      }));
-      setStreamedTriage(mockMaliciousScan.ollama_triage);
-    } else {
-      setData(prev => ({
-        ...prev,
-        ...mockCleanScan,
-        package_name: record.package_name,
-        confidence: record.confidence,
-        scan_history: prev.scan_history
-      }));
-      setStreamedTriage(mockCleanScan.ollama_triage);
+        `❌ Connection Error: Local TraceTree API is offline.`,
+        `Error details: ${err.message}`,
+        `Make sure you set export TRACETREE_API_KEYS="your-key" and ran python3 cli.py dashboard.`
+      ]);
+      setIsRunningCommand(false);
     }
   };
 
-  // Helper menu alert callbacks
+  // 5. Selecting historical scans
+  const loadHistoricalScan = (record: ScanRecord) => {
+    if (isRunningCommand) return;
+    if (!record.findings) {
+      alert("No telemetry payload available for this historical item.");
+      return;
+    }
+
+    try {
+      const findings = JSON.parse(record.findings);
+      
+      const mappedEvents = (findings.events || []).map((e: any, idx: number) => ({
+        id: idx + 1,
+        syscall: e.syscall || "openat",
+        pid: e.pid || 0,
+        target: e.target || e.target_path || "unspecified",
+        severity: e.severity || "LOW",
+        flag: e.flag || false
+      }));
+
+      const mappedPatterns = (findings.behavioral_signatures || []).map((s: any) => ({
+        pattern: s.name || "suspicious_signature",
+        severity: s.severity === "HIGH" ? 9 : s.severity === "MEDIUM" ? 6 : 3,
+        window: s.evidence || "within execution window"
+      }));
+
+      const mappedNetwork = (findings.network_destinations || []).map((n: any) => ({
+        destination: n.ip || n.host || "unknown",
+        port: n.port || 443,
+        classification: n.classification || "OUTBOUND",
+        verdict: n.is_malicious ? "MALICIOUS" : "CLEAN"
+      }));
+
+      setData(prev => ({
+        ...prev,
+        package_name: record.package_name,
+        status: record.verdict,
+        confidence: record.confidence,
+        stage: "complete",
+        total_severity: findings.total_severity || 0.0,
+        events: mappedEvents,
+        temporal_patterns: mappedPatterns,
+        network_connections: mappedNetwork,
+        ollama_triage: findings.ai_summary || findings.ollama_triage || "AI Triage analysis complete."
+      }));
+
+    } catch (e) {
+      alert("Failed to parse historical telemetry data.");
+    }
+  };
+
   const handleMenuClick = (menuItem: string) => {
     alert(`TraceTree System Message:\n"${menuItem}" is a stub menu item.`);
   };
@@ -337,7 +478,8 @@ export default function Dashboard() {
             OLLAMA TRIAGE ONLINE — &nbsp;
             RANDOMFOREST MODEL LOADED — &nbsp;
             SANDBOX ISOLATION: DOCKER — &nbsp;
-            {pollingError ? "⚠️ WARNING: OFFLINE MODE (USING LOCAL SIMULATOR)" : "⚡ CONNECTED TO LOCAL ENGINE PORT 8422"} ★ &nbsp; &nbsp; &nbsp;
+            {!data.stats.api_online ? "⚠️ WARNING: OFFLINE MODE (PORT 8000 UNREACHABLE)" : "⚡ API ENGINE ONLINE (PORT 8000)"} — &nbsp;
+            {!data.stats.orchestrator_online ? "⚠️ WS OFFLINE" : "⚡ ORCHESTRATOR CONNECTED (PORT 3000)"} ★ &nbsp; &nbsp; &nbsp;
           </span>
         </Marquee>
       </div>
@@ -395,39 +537,18 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Local Intake panel */}
-        <Win95Card title="Intake Portal (Start New Sandbox Analysis)" bodyClassName="p-3">
-          <div className="flex flex-wrap gap-2 items-center">
-            <label className="font-mono text-xs font-bold text-black shrink-0">
-              TARGET PATH / PKG NAME:
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. urllib33, requests, setup.py..."
-              className="flex-1 min-w-[200px] border-2 border-t-[#808080] border-l-[#808080] border-b-[#fff] border-r-[#fff] bg-white px-2 py-1 font-mono text-sm text-black outline-none focus:outline-dotted focus:outline-2 focus:outline-black rounded-none"
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              disabled={isSimulating}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && inputVal.trim()) {
-                  handleSimulatedScan(inputVal.trim());
-                  setInputVal("");
-                }
-              }}
-            />
-            <BevelButton
-              onClick={() => {
-                if (inputVal.trim()) {
-                  handleSimulatedScan(inputVal.trim());
-                  setInputVal("");
-                }
-              }}
-              disabled={isSimulating || !inputVal.trim()}
-              className="font-bold text-[#000080]"
-            >
-              [ RUN ANALYSIS ]
-            </BevelButton>
-          </div>
+        {/* Interactive MS-DOS Prompt Console */}
+        <Win95Card title="MS-DOS Prompt (Local Command execution Portal)">
+          <MSDosPrompt
+            command={command}
+            setCommand={setCommand}
+            isRunning={isRunningCommand}
+            terminalOutput={terminalOutput}
+            enableAi={enableAi}
+            setEnableAi={setEnableAi}
+            onExecute={handleExecuteCommand}
+            onClear={() => setTerminalOutput([])}
+          />
         </Win95Card>
 
         {/* 4. Main two-column area */}
@@ -496,7 +617,7 @@ export default function Dashboard() {
 
             {/* Card 7: OLLAMA TRIAGE OUTPUT */}
             <Win95Card title="AI Triage Report (Ollama Jury)">
-              <OllamaTriage text={isSimulating ? streamedTriage : data.ollama_triage} isStreaming={isTriageStreaming} />
+              <OllamaTriage text={data.ollama_triage} isStreaming={false} />
             </Win95Card>
 
           </div>
@@ -527,7 +648,7 @@ export default function Dashboard() {
                     <button
                       key={record.id}
                       onClick={() => loadHistoricalScan(record)}
-                      disabled={isSimulating}
+                      disabled={isRunningCommand}
                       className={`w-full text-left p-1.5 flex items-center justify-between border-2 border-t-[#fff] border-l-[#fff] border-b-[#808080] border-r-[#808080] active:border-t-[#808080] active:border-l-[#808080] active:border-b-[#fff] active:border-r-[#fff] ${bgClass} rounded-none select-none outline-none focus:outline-dotted focus:outline-2 focus:outline-black`}
                     >
                       <div className="flex flex-col truncate pr-2">
