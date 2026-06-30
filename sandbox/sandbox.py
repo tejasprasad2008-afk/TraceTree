@@ -208,11 +208,10 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
         log_file_path = log_dir / f"{Path(target).name}_{target_type}_strace.log"
         
         env_vars = os.environ.copy()
-        env_vars["TARGET"] = target
-        env_vars["TRACETREE_LOG_PATH"] = str(log_file_path)
         if env:
             env_vars.update(env)
-
+        env_vars["TARGET"] = target
+        env_vars["TRACETREE_LOG_PATH"] = str(log_file_path)
         # Map target_type to script — log path injected via env, never formatted into script
         if target_type == "pip":
             script = """
