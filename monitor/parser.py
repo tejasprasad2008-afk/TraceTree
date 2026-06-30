@@ -1,6 +1,7 @@
 import re
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Optional
 from pathlib import Path
+from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path
 
 # --------------------------------------------------------------------------- #
 #  Syscall severity weights
@@ -60,18 +61,6 @@ SEVERITY_WEIGHTS: Dict[str, float] = {
     "bpf": 9.0,
 }
 
-# Known-benign binaries that are expected during a normal pip/npm install.
-# execve of anything else raises a severity-adjusted flag.
-BENIGN_BINARIES = frozenset([
-    "/usr/local/bin/pip", "/usr/bin/pip",
-    "/usr/local/bin/python", "/usr/bin/python",
-    "/usr/local/bin/python3", "/usr/bin/python3",
-    "/usr/bin/sh", "/usr/local/bin/sh",
-    "/bin/sh", "/bin/bash",
-    "/usr/local/bin/npm", "/usr/bin/npm",
-    "/usr/local/bin/node", "/usr/bin/node",
-    "/usr/bin/ip", "/sbin/ip",
-])
 
 # Paths that are clearly benign when accessed during an install.
 BENIGN_PATH_PREFIXES = (
@@ -97,45 +86,6 @@ BENIGN_PATH_PREFIXES = (
     "/etc/hosts",
 )
 
-# Known PyPI / npm / package registry destinations — flagged with LOW severity.
-KNOWN_SAFE_NETWORKS = frozenset([
-    "151.101.",        # PyPI CDN (Fastly)
-    "104.16.",         # PyPI (Cloudflare)
-    "104.17.",
-    "151.101.0.",
-    "151.101.64.",
-    "151.101.128.",
-    "151.101.192.",
-    "52.85.",          # npm CDN
-    "54.230.",
-    "13.107.",         # GitHub / Azure
-    "52.96.",
-    "40.79.",
-    "140.82.121.",     # github.com
-    "140.82.112.",
-    "185.199.108.",    # raw.githubusercontent.com
-    "185.199.109.",
-    "185.199.110.",
-    "185.199.111.",
-    "199.232.",        # npm registry (jsDelivr / CloudFront)
-    "99.84.",
-    "99.86.",
-    "13.224.",         # CloudFront
-    "13.225.",
-    "13.226.",
-    "13.227.",
-    "3.160.",
-    "3.162.",
-    "3.164.",
-    "3.165.",
-    "3.166.",
-    "3.167.",
-    "3.168.",
-    "99.84.",
-    "99.86.",
-    "205.251.",        # AWS CloudFront
-    "13.249.",
-])
 
 # Suspicious destinations — these always raise an alert.
 SUSPICIOUS_DEST_PATTERNS = [
@@ -148,28 +98,6 @@ SUSPICIOUS_DEST_PATTERNS = [
     re.compile(r"^192\.168\."),    # private IP from container
 ]
 
-# Sensitive file patterns for openat/read/write.
-SENSITIVE_FILE_PATTERNS = [
-    re.compile(r"/etc/passwd"),
-    re.compile(r"/etc/shadow"),
-    re.compile(r"\.ssh/"),
-    re.compile(r"\.aws/"),
-    re.compile(r"\.kube/config"),
-    re.compile(r"\.env$"),
-    re.compile(r"\.npmrc$"),
-    re.compile(r"\.pypirc$"),
-    re.compile(r"\.git-credentials"),
-    re.compile(r"\.netrc"),
-    re.compile(r"/proc/self/environ"),
-    re.compile(r"/proc/net/"),
-    re.compile(r"/proc/\d+/"),
-    re.compile(r"/crontab"),
-    re.compile(r"^/tmp/\.[^/]+"),   # hidden files in /tmp
-    re.compile(r"\.bash_history$"),
-    re.compile(r"/etc/cron"),
-    re.compile(r"/root/\.bash_history"),
-    re.compile(r"/var/run/secrets"),
-]
 
 # Known C2 / exfiltration ports.
 SUSPICIOUS_PORTS = frozenset([
@@ -336,10 +264,7 @@ def _classify_destination(ip: str, port: Optional[str] = None) -> Dict[str, Any]
 
 def _is_sensitive_path(filepath: str) -> bool:
     """Return True if the file path matches a sensitive file pattern."""
-    for pat in SENSITIVE_FILE_PATTERNS:
-        if pat.search(filepath):
-            return True
-    return False
+    return is_sensitive_path(filepath)
 
 
 def _is_benign_path(filepath: str) -> bool:

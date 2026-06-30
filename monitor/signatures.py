@@ -16,6 +16,7 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from monitor.utils import BENIGN_BINARIES, KNOWN_SAFE_NETWORKS, is_sensitive_path, is_secret_path
 
 log = logging.getLogger(__name__)
 
@@ -293,17 +294,10 @@ def _check_sequence_condition(
         return False
 
     if condition == "sensitive":
-        sensitive_patterns = [
-            "/etc/shadow", "/etc/passwd", ".aws/", ".ssh/",
-            ".npmrc", ".pypirc", ".env", ".git-credentials",
-            "/proc/self/environ", "/root/.bash_history",
-            "/var/run/secrets",
-        ]
-        return any(p in target for p in sensitive_patterns)
+        return is_sensitive_path(target)
 
     if condition == "secret":
-        secret_patterns = [".env", ".npmrc", ".aws/credentials", ".ssh/id_rsa"]
-        return any(p in target for p in secret_patterns)
+        return is_secret_path(target)
 
     if condition == "cron_path":
         cron_patterns = ["/var/spool/cron", "crontab", "/etc/cron.d",

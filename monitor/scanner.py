@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Generator, Tuple
 from monitor.yara import SCAN_EXCLUDE_EXTENSIONS, SCAN_EXCLUDE_DIRS
+from typing import List, Dict, Any, Generator
 
 log = logging.getLogger(__name__)
 

@@ -9,9 +9,7 @@ adversarial injection probes to detect vulnerable servers.
 import json
 import time
 import subprocess
-import threading
 from typing import Dict, Any, List, Optional, Tuple
-from pathlib import Path
 import requests
 
 

@@ -1,10 +1,8 @@
-import os
 import pickle
 import numpy as np
 from pathlib import Path
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from typing import Dict, Any, Tuple
-from google.cloud import storage
 
 from rich.console import Console
 

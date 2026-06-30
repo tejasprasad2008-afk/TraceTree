@@ -13,7 +13,6 @@ Produces a structured report containing:
 
 import json
 from typing import Dict, Any, List, Optional
-from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table

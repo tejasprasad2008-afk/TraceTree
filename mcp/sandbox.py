@@ -14,9 +14,8 @@ import shlex
 import time
 import tarfile
 import tempfile
-import subprocess
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 from rich.console import Console
 
 console = Console()
