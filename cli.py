@@ -1902,7 +1902,7 @@ def dashboard_cmd():
     """Dashboard is being rebuilt — unavailable in this version."""
     console.print("[bold yellow]⚠ Dashboard command is temporarily disabled while a new dashboard is being developed.[/]")
     console.print("[dim]It will return in a future release.[/]")
-    raise typer.Exit(0)
+    raise typer.Exit(1)
 
 
 dashboard_cli = typer.Typer(
@@ -1915,7 +1915,7 @@ def _dashboard_cmd():
     """Dashboard is being rebuilt — unavailable in this version."""
     console.print("[bold yellow]⚠ Dashboard command is temporarily disabled while a new dashboard is being developed.[/]")
     console.print("[dim]It will return in a future release.[/]")
-    raise typer.Exit(0)
+    raise typer.Exit(1)
 
 
 if __name__ == "__main__":
