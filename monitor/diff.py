@@ -249,13 +249,6 @@ def _summarize_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "network_destinations": network_destinations,
         "file_accesses": file_accesses,
     }
-            if (
-                target
-                and not target.startswith("/proc/")
-                and not target.startswith("/dev/")
-            ):
-                files.add(target)
-    return files
 
 
 def _is_sensitive_file(path: str) -> bool:
