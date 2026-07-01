@@ -6,6 +6,8 @@ from monitor.ngrams import (
     ngram_similarity,
     weighted_ngram_similarity,
     detect_suspicious_ngrams,
+    _SUSPICIOUS_NGRAMS,
+    MAX_STRACE_LINES,
     _parse_syscall_categories
 )
 
@@ -262,11 +264,6 @@ def test_detect_suspicious_ngrams():
     # No suspicious patterns
     clean = {"ngrams": {"clean,ngram": 1}}
     assert detect_suspicious_ngrams(clean) == []
-    _parse_syscall_categories,
-    _SUSPICIOUS_NGRAMS,
-    MAX_STRACE_LINES,
-)
-
 def test_parse_syscall_categories_formats(tmp_path):
     """Test various strace line formats."""
     log_content = (
