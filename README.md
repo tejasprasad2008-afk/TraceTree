@@ -150,7 +150,7 @@ Every `connect` syscall is classified into one of four categories:
 ### Install
 
 ```bash
-git clone https://github.com/tejasprasad2008-afk/TraceTree.git
+git clone --depth 1 https://github.com/tejasprasad2008-afk/TraceTree.git
 cd TraceTree
 pip install -e .
 ```
