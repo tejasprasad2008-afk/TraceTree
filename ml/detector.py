@@ -108,9 +108,73 @@ def train_baseline_model() -> IsolationForest:
 #  Model loading
 # --------------------------------------------------------------------------- #
 
+def safe_load_model(filepath: Path):
+    """
+    Safely load a model file using skops.io.
+    Inspects type information in the schema first and rejects any forbidden types.
+    """
+    import skops.io as sio
+    from zipfile import ZipFile
+    import json
+    
+    # 1. First run skops untrusted types check
+    try:
+        untrusted = sio.get_untrusted_types(file=filepath)
+    except Exception as e:
+        raise ValueError(f"Invalid model file format or structural check failed: {e}")
+        
+    if untrusted:
+        raise ValueError(f"Security error: Untrusted types found in model file: {untrusted}")
+        
+    # 2. Strict allowlist verification of all module and class names
+    allowed_modules = {
+        "builtins",
+        "numpy",
+        "numpy.core.multiarray",
+        "sklearn.ensemble._forest",
+        "sklearn.ensemble._iforest",
+        "sklearn.tree._classes",
+        "sklearn.tree._tree",
+        "sklearn.ensemble",
+        "sklearn.tree",
+    }
+    allowed_classes = {
+        "dict", "list", "str", "tuple", "float", "int", "bool",
+        "ndarray", "dtype", "int64", "float64", "int32", "float32",
+        "RandomForestClassifier", "IsolationForest",
+        "DecisionTreeClassifier", "ExtraTreeRegressor", "Tree",
+    }
+    
+    try:
+        with ZipFile(filepath, "r") as zip_file:
+            schema = json.loads(zip_file.read("schema.json"))
+    except Exception as e:
+        raise ValueError(f"Could not read model schema: {e}")
+        
+    def walk(node):
+        if isinstance(node, dict):
+            if "__class__" in node:
+                module = node.get("__module__", "")
+                name = node.get("__class__", "")
+                if module and module not in allowed_modules:
+                    raise ValueError(f"Security error: Forbidden module {module} in model file")
+                if name and name not in allowed_classes:
+                    raise ValueError(f"Security error: Forbidden class {name} in model file")
+            for val in node.values():
+                walk(val)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+                
+    walk(schema)
+    
+    # Standard skops load
+    return sio.load(filepath)
+
+
 def get_ml_model(version: str = None):
     """
-    Lazily loads the Supervised RandomForest if available locally or from GCS.
+    Lazily loads the Supervised RandomForest if available locally.
     Falls back to an IsolationForest trained on hardcoded clean baselines.
     
     Args:
@@ -127,26 +191,28 @@ def get_ml_model(version: str = None):
         manager = ModelVersionManager()
         version_path = manager.get_version(version)
         if version_path and version_path.exists():
-            try:
-                with open(version_path, "rb") as f:
-                    _MODEL_CACHE = pickle.load(f)
+            if version_path.suffix == ".pkl":
+                console.print(f"[bold yellow]Warning: Legacy model file {version_path.name} cannot be loaded safely. Please retrain to produce a .skops file.[/]")
+            else:
+                try:
+                    _MODEL_CACHE = safe_load_model(version_path)
                     console.print(f"[dim]Loaded model version {version}[/]")
                     return _MODEL_CACHE
-            except Exception as e:
-                console.print(f"[bold yellow]Failed to load version {version}: {e}[/]")
+                except Exception as e:
+                    console.print(f"[bold yellow]Failed to load version {version}: {e}[/]")
     
-    # Load from local path only — GCS is never touched during analyze (offline-safe)
-    model_path = Path(__file__).parent / "model.pkl"
+    # Check if a legacy model.pkl exists
+    legacy_model_path = Path(__file__).parent / "model.pkl"
+    if legacy_model_path.exists() and legacy_model_path.stat().st_size > 0:
+        console.print("[bold yellow]Warning: Legacy model.pkl exists but cannot be loaded safely. Please retrain the model with `cascade-train` to produce model.skops.[/]")
+
+    model_path = Path(__file__).parent / "model.skops"
 
     try:
         if not model_path.exists() or model_path.stat().st_size == 0:
             _MODEL_CACHE = _auto_train_or_baseline(model_path)
             return _MODEL_CACHE
-        with open(model_path, "rb") as f:
-            _MODEL_CACHE = pickle.load(f)
-            return _MODEL_CACHE
-    except (EOFError, pickle.UnpicklingError):
-        _MODEL_CACHE = _auto_train_or_baseline(model_path)
+        _MODEL_CACHE = safe_load_model(model_path)
         return _MODEL_CACHE
     except Exception as e:
         console.print(f"[bold red]Local model load failed:[/] {e}")
@@ -166,8 +232,7 @@ def _auto_train_or_baseline(model_path: Path):
             from ml.trainer import train_model
             train_model(skip_gcs=True)
             if model_path.exists() and model_path.stat().st_size > 0:
-                with open(model_path, "rb") as f:
-                    model = pickle.load(f)
+                model = safe_load_model(model_path)
                 console.print("[bold green]✔ Auto-trained RandomForest model ready.[/]")
                 return model
         except Exception as e:
@@ -175,21 +240,6 @@ def _auto_train_or_baseline(model_path: Path):
 
     console.print("[dim italic]Falling back to IsolationForest zero-shot detection.[/]")
     return train_baseline_model()
-
-
-def update_model_from_gcs():
-    """Force-download the latest model from GCS, replacing the local cache."""
-    model_path = Path(__file__).parent / "model.pkl"
-    try:
-        console.print("[cyan]Fetching latest model from GCS...[/]")
-        import urllib.request
-        url = "https://storage.googleapis.com/cascade-analyzer-models/model.pkl"
-        model_path.parent.mkdir(exist_ok=True)
-        urllib.request.urlretrieve(url, str(model_path))
-        clear_model_cache()
-        console.print("[bold green]✔ Model updated from GCS.[/]")
-    except Exception as e:
-        console.print(f"[bold red]GCS fetch failed:[/] {e}")
 
 
 # --------------------------------------------------------------------------- #

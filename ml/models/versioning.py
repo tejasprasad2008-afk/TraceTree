@@ -61,7 +61,7 @@ class ModelVersionManager:
         version_dir.mkdir(parents=True, exist_ok=True)
         
         # Copy model file
-        dest_path = version_dir / "model.pkl"
+        dest_path = version_dir / "model.skops"
         shutil.copy2(model_path, dest_path)
         
         # Save metadata
@@ -98,11 +98,15 @@ class ModelVersionManager:
         
         if not version:
             # Fall back to legacy location
-            legacy = Path(__file__).parent / "model.pkl"
+            legacy = Path(__file__).parent / "model.skops"
             return legacy if legacy.exists() else None
         
         version_dir = self.models_dir / version
-        model_path = version_dir / "model.pkl"
+        model_path = version_dir / "model.skops"
+        if not model_path.exists():
+            legacy_path = version_dir / "model.pkl"
+            if legacy_path.exists():
+                return legacy_path
         
         return model_path if model_path.exists() else None
     
