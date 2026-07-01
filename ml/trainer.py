@@ -1,6 +1,6 @@
 import csv
 import os
-import pickle
+import skops.io as sio
 from pathlib import Path
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.console import Console
@@ -114,35 +114,21 @@ def train_model(skip_gcs: bool = False):
     
     model_dir = base_dir / "ml"
     model_dir.mkdir(exist_ok=True)
-    model_path = model_dir / "model.pkl"
+    model_path = model_dir / "model.skops"
     
     # Cache model state internally
-    with open(model_path, 'wb') as f:
-        pickle.dump(model, f)
+    sio.dump(model, model_path)
         
     # Also save to Azure ML 'outputs' directory if it exists
     outputs_dir = Path("outputs")
     if outputs_dir.exists():
-        with open(outputs_dir / "model.pkl", 'wb') as f:
-            pickle.dump(model, f)
+        sio.dump(model, outputs_dir / "model.skops")
         console.print("[bold green]✔ Model also saved to Azure ML outputs directory.[/]")
         
     # Invalidate in-memory cache to ensure the new model is loaded
     clear_model_cache()
 
     console.print(f"[bold green]✔ Model efficiently saved natively to {model_path}[/]")
-    
-    if not skip_gcs:
-        try:
-            console.print("[cyan]Pushing weights into global Google Cloud Storage cache (`cascade-analyzer-models`)...[/]")
-            from google.cloud import storage  # lazy import — optional dependency
-            client = storage.Client()  # Expects GOOGLE_APPLICATION_CREDENTIALS or gcloud auth
-            bucket = client.bucket("cascade-analyzer-models")
-            blob = bucket.blob("model.pkl")
-            blob.upload_from_filename(str(model_path))
-            console.print("[bold green]✔ Model uploaded directly cleanly to remote GCS successfully![/]")
-        except Exception as e:
-            console.print(f"[bold yellow]⚠ GCS Auth Upload Skipped (Non-Fatal):[/] {e}")
 
 if __name__ == "__main__":
     train_model()

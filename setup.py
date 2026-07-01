@@ -25,6 +25,7 @@ setup(
         "docker>=7.0.0",
         "google-cloud-storage>=2.10.0",
         "requests>=2.25.1",
+        "skops>=0.10.0",
     ],
     entry_points={
         "console_scripts": [
