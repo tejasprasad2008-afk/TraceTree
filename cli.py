@@ -796,11 +796,6 @@ def train_cli():
     from ml.trainer import train_model
     train_model()
 
-def update_cli():
-    """CLI entrypoint evaluating cascade-update natively"""
-    from ml.detector import update_model_from_gcs
-    update_model_from_gcs()
-
 
 @app.command()
 def mcp(
