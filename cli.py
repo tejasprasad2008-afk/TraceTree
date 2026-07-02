@@ -44,6 +44,39 @@ from sandbox.sandbox import run_sandbox
 app = typer.Typer(help="TraceTree Security Analyzer")
 console = Console()
 
+def print_panel_with_trim(console_obj, content: str, title: str, border_style: str, max_lines: int = 10):
+    lines = content.splitlines()
+    if len(lines) <= max_lines:
+        console_obj.print(Panel(content, title=title, border_style=border_style, expand=False))
+        return
+
+    trimmed_content = "\n".join(lines[:max_lines]) + "\n\n[dim]... Output trimmed ...[/dim]"
+    console_obj.print(Panel(trimmed_content, title=title, border_style=border_style, expand=False))
+
+    if sys.stdin.isatty():
+        try:
+            import termios, tty
+            console_obj.print("[dim]Press Ctrl+O to view full output, or any other key to continue...[/dim]", end="\r")
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                ch = sys.stdin.read(1)
+            except Exception:
+                ch = ""
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            
+            # Clear the hint line
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+
+            if ch == '\x0f':  # Ctrl+O
+                with console_obj.pager():
+                    console_obj.print(Panel(content, title=title, border_style=border_style, expand=False))
+        except ImportError:
+            pass
+
 BANNER_ASCII = """
 ████████╗██████╗  █████╗  ██████╗███████╗████████╗██████╗ ███████╗███████╗
 ╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝╚══██╔══╝██╔══██╗██╔════╝██╔════╝
@@ -251,7 +284,7 @@ def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
         
     return tree
 
-def perform_analysis(target: str, target_type: str, progress, console, workspace_root: str = None) -> Tuple[bool, float, dict, dict, list, list, list, dict]:
+def perform_analysis(target: str, target_type: str, progress, console, workspace_root: str = None, controlled_network: bool = False) -> Tuple[bool, float, dict, dict, list, list, list, dict]:
     """Helper to run the full sandbox → parse → graph → ML pipeline for a single target.
 
     Returns:
@@ -277,7 +310,7 @@ def perform_analysis(target: str, target_type: str, progress, console, workspace
     ngram_data: dict = {}
 
     task1 = progress.add_task(f"[yellow]Sandboxing {target} ({target_type})...", total=None)
-    log_path = run_sandbox(target, target_type, workspace_root=workspace_root)
+    log_path = run_sandbox(target, target_type, workspace_root=workspace_root, controlled_network=controlled_network)
     if log_path and Path(log_path).exists():
         progress.update(task1, description=f"[bold green]✔[/] [dim]Sandbox complete: {Path(log_path).name}[/]")
     else:
@@ -386,6 +419,7 @@ def analyze(
     gui: bool = typer.Option(False, "--gui", "-g", help="Send analysis telemetry to running GUI dashboard"),
     ai: bool = typer.Option(False, "--ai", help="Use local AI (Ollama + Qwen2.5-Coder) to verify findings."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Dry-run mode to print raw LLM prompts/responses"),
+    controlled_network: bool = typer.Option(False, "--controlled-network", help="Enable controlled network/sinkhole mode (do not fully disconnect eth0)."),
 ):
     """Run a behavioral cascade analysis on a suspicious target."""
     check_docker_preflight()
@@ -459,7 +493,7 @@ def analyze(
             console=console,
             transient=False,
         ) as progress:
-            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()))
+            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()), controlled_network=controlled_network)
             verdict = confidence
             risk_score = float(verdict.risk_score if hasattr(verdict, "risk_score") else verdict)
             ml_probability = verdict.ml_probability if hasattr(verdict, "ml_probability") else None
@@ -503,7 +537,7 @@ def analyze(
         # ── Flagged Behaviors (raw parser flags) ──
         flags = parsed_data.get("flags", [])
         behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in flags]) if flags else "[dim green]No suspicious footprints flagged.[/]"
-        console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red" if flags else "green", expand=False))
+        print_panel_with_trim(console, behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red" if flags else "green")
 
         # ── Behavioral Signatures (matched patterns) ──
         if sig_matches:
@@ -657,7 +691,7 @@ def analyze(
         
         if reasons:
             reasons_str = "\n".join([f"[bold red]•[/] {r}" for r in reasons])
-            console.print(Panel(reasons_str, title="[bold]Verdict Logic / Risk Explanations[/]", border_style="yellow", expand=False))
+            print_panel_with_trim(console, reasons_str, title="[bold]Verdict Logic / Risk Explanations[/]", border_style="yellow")
 
         # Summary line with both signatures and temporal patterns
         extras = []
@@ -1176,7 +1210,7 @@ def watch(
 
             if threats:
                 behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in threats])
-                console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red", expand=False))
+                print_panel_with_trim(console, behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red")
 
         console.print()
 
@@ -1240,7 +1274,7 @@ def watch(
 
     if threats:
         behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in threats])
-        console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red" if threats else "green", expand=False))
+        print_panel_with_trim(console, behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red" if threats else "green")
 
     if phase == "error":
         console.print(f"[bold red]Error:[/] {final.get('error', 'Unknown error')}")
@@ -1256,6 +1290,7 @@ def check(
         "--output", "-o",
         help="Output format: 'report' (Rich console) or 'json'.",
     ),
+    controlled_network: bool = typer.Option(False, "--controlled-network", help="Enable controlled network/sinkhole mode (do not fully disconnect eth0)."),
 ):
     """
     Quick on-demand scan of a specific file or command.
@@ -1314,7 +1349,7 @@ def check(
     else:
         target_type = "pip"
 
-    log_path = run_sandbox(str(target_path), target_type, workspace_root=str(repo_path))
+    log_path = run_sandbox(str(target_path), target_type, workspace_root=str(repo_path), controlled_network=controlled_network)
     if not log_path or not Path(log_path).exists():
         console.print("[bold red]Error:[/] Sandbox failed — check that Docker is running.")
         return
@@ -1348,12 +1383,12 @@ def check(
     console.print(Align.center(Text(f"Rule-based Risk Score: {risk_score:.1f}/100", style=conf_style)))
     if reasons:
         reasons_str = "\n".join([f"[bold red]•[/] {r}" for r in reasons])
-        console.print(Panel(reasons_str, title="[bold]Verdict Logic / Risk Explanations[/]", border_style="yellow", expand=False))
+        print_panel_with_trim(console, reasons_str, title="[bold]Verdict Logic / Risk Explanations[/]", border_style="yellow")
 
     flags = parsed.get("flags", [])
     if flags:
         behaviors_str = "\n".join([f"[bold red]•[/] {f}" for f in flags])
-        console.print(Panel(behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red", expand=False))
+        print_panel_with_trim(console, behaviors_str, title="[bold]Flagged Behaviors[/]", border_style="red")
 
     console.print("\n" + "─" * console.width + "\n")
 
