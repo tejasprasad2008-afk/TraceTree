@@ -39,7 +39,7 @@ TraceTree/
 1.  **Leg 1: Sandbox Isolation (The Trap)** — Executes targets in isolated Docker containers (or a high-performance `direct` mode) where threats are physically contained.
 2.  **Leg 2: Syscall Parsing (The Nervous System)** — A high-precision engine that monitors every "vibration" (system call) a process makes to the OS.
 3.  **Leg 3: Behavioral Graphing (The Web)** — Maps the "Cascade" of how processes, files, and network nodes interact using NetworkX directed graphs.
-4.  **Leg 4: ML Anomaly Detection (The Intuition)** — A custom-trained Random Forest model (trained on 841 packages) that predicts malicious intent with high confidence.
+4.  **Leg 4: ML Anomaly Detection (The Intuition)** — A custom-trained Random Forest model (trained on a small, representative dataset of clean/malicious packages, plus optional live MalwareBazaar feeds) that predicts malicious intent with high confidence.
 5.  **Leg 5: YARA Signature Matching (The Memory)** — An integrated library of known malware DNA and exploit patterns (Reverse Shells, Cryptominers, etc.).
 6.  **Leg 6: MCP Security Protocol (The Agent Shield)** — Specialized protection for Model Context Protocol servers, defending the tools that AI agents use.
 7.  **Leg 7: Security Guardian AI (The Proactive Web)** — A pre-commit "Smart Scanner" using local LLMs (Qwen-Coder) to catch leaks and injections before they hit your history.
@@ -357,14 +357,15 @@ cascade-analyze mcp --npm some-package --output json
 
 **`cli.py`** — Typer CLI entry point. Registers all subcommands. Orchestrates the analysis pipeline with Rich progress bars and formatted output panels.
 
-## Limitations
+## Limitations & Blind Spots
 
 - **ML model reliability** — The trained RandomForest model is only as good as its training data. The current model was trained on a small set of packages. For reliable detection, run `cascade-train` with a large, labeled dataset. The IsolationForest fallback is a heuristic baseline, not a production-quality model.
+- **Network sandbox exclusion** — By default, the sandbox disables network access (`ip link set eth0 down`) before running/installing the package to prevent active data exfiltration during scanning. While secure, this means malware requiring network handshakes or C2 connections during installation may not execute its payload, or some legitimate installers that require internet connectivity will fail. To bypass this, pass the `--controlled-network` option to enable controlled/sinkhole network mode.
+- **Container and strace evasion** — Advanced malware can detect it is running inside a Docker container (by checking cgroups, filesystem clues, etc.) or detect that its processes are under `strace`/`ptrace` monitoring (by calling `ptrace(PTRACE_TRACEME, ...)` or checking `TracerPid` in `/proc/self/status`). If evasion is triggered, the malware may terminate early or execute only benign actions, evading detection.
 - **strace requires Linux** — The sandbox runs on Linux inside Docker. On macOS and Windows, Docker runs a Linux VM, which works, but native macOS or Windows syscalls cannot be traced. DMG scripts and EXE binaries are executed in a Linux environment, which limits their behavioral fidelity.
 - **wine64 EXE analysis is best-effort** — Wine translates Windows syscalls to Linux syscalls. Some Windows-specific behavior (registry access, COM objects, Windows API calls) may not produce visible Linux-level syscalls. GUI applications that wait for user input will timeout after 30 seconds.
 - **DMG analysis is limited** — DMG files are extracted with 7z, which may fail on encrypted or uncommon formats. Extracted scripts are run in a Linux container, so macOS-specific behavior (launchd, Keychain, etc.) will not execute.
-- **No train/test split** — The training pipeline does not split data into training and evaluation sets. Accuracy metrics are not reported.
-- **API stub** — `api/main.py` is not wired to the real pipeline. It returns hardcoded data.
+- **API implementation** — `api/main.py` is wired to run the actual TraceTree analysis pipeline inside background tasks. It uses an in-memory database (`mock_db`) for job tracking, and requires the `TRACETREE_API_KEYS` environment variable to be set to start.
 - **Session guardian does not clone repos** — `cascade-watch` accepts a URL argument but does not perform `git clone`. It watches the local directory or falls back to the current working directory.
 
 ## Contributing
