@@ -180,13 +180,12 @@ echo "[exe] Analysis complete — log: $LOG_FILE" >&2
 # --------------------------------------------------------------------------- #
 
 
-def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = None, env: dict = None) -> str:
+def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = None, env: dict = None, controlled_network: bool = False) -> str:
     """
-    Executes the package/installer logic inside an isolated Docker container.
-    Captures syscalls using strace.
+    Execute a target package or script inside the isolated strace sandbox.
 
     Supported target types:
-      - pip: Downloads and installs a PyPI package offline
+      - pip: Downloads and installs a python package
       - npm: Installs an npm package
       - dmg: Extracts and traces executables from a macOS DMG image
       - exe: Runs a Windows EXE under wine64 with syscall tracing
@@ -194,6 +193,7 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
     Additional parameters:
       - env: Optional dict of environment variables to inject into the container.
             Example: {"AWS_ACCESS_KEY_ID": "fake", "SECRET_KEY": "test"}
+      - controlled_network: If True, skips disconnecting eth0 within the container.
 
     Returns:
         Path to the strace log file, or empty string on failure.
@@ -231,7 +231,6 @@ cp /tmp/strace.log "$TRACETREE_LOG_PATH"
             return ""
 
         try:
-            import tempfile
             with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as tf:
                 tf.write(script)
                 tf.flush()
@@ -400,6 +399,10 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
                 security_opt.append(f"seccomp={seccomp_content}")
             except Exception as e:
                 console.print(f"[yellow]⚠ Failed to load seccomp: {e}[/]")
+
+        if controlled_network:
+            sandbox_script = sandbox_script.replace("ip link set eth0 down", "echo 'Controlled network: keeping eth0 up'")
+            sandbox_script = sandbox_script.replace("ip link set eth0 down 2>/dev/null || true", "echo 'Controlled network: keeping eth0 up'")
 
         try:
             container = client.containers.run(
