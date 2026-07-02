@@ -25,15 +25,18 @@ async def verify_api_key(x_api_key: str = Header(...)):
 
 app = FastAPI(
     title="TraceTree API",
-    description="API for analyzing suspicious Python packages by monitoring runtime behavioral cascades.",
+    description="[NON-PRODUCTION] API for analyzing suspicious Python packages by monitoring runtime behavioral cascades.",
     version="1.0.0"
 )
 
-# Enable CORS for frontend development
+# Enable CORS with a configurable allowlist (default to localhost)
+cors_origins_str = os.getenv("TRACETREE_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+allow_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=allow_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
