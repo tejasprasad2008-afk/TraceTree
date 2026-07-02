@@ -27,35 +27,6 @@ log = logging.getLogger(__name__)
 _SIGNATURES_PATH = Path(__file__).parent.parent / "data" / "signatures.json"
 
 # --------------------------------------------------------------------------- #
-#  Known benign hosts for network classification (re-used from parser)
-# --------------------------------------------------------------------------- #
-
-KNOWN_SAFE_NETWORKS = frozenset([
-    "151.101.", "104.16.", "104.17.", "52.85.", "54.230.",
-    "13.107.", "52.96.", "40.79.", "140.82.121.", "140.82.112.",
-    "185.199.108.", "185.199.109.", "185.199.110.", "185.199.111.",
-    "199.232.", "99.84.", "99.86.", "13.224.", "13.225.", "13.226.",
-    "13.227.", "3.160.", "3.162.", "3.164.", "3.165.", "3.166.",
-    "3.167.", "3.168.", "205.251.", "13.249.",
-])
-
-BENIGN_BINARIES = frozenset([
-    "/usr/local/bin/pip", "/usr/bin/pip",
-    "/usr/local/bin/python", "/usr/bin/python",
-    "/usr/local/bin/python3", "/usr/bin/python3",
-    "/usr/bin/sh", "/usr/local/bin/sh",
-    "/bin/sh", "/bin/bash",
-    "/usr/local/bin/npm", "/usr/bin/npm",
-    "/usr/local/bin/node", "/usr/bin/node",
-    "/usr/bin/ip", "/sbin/ip",
-    # system info utilities pip calls for platform fingerprinting
-    "/usr/bin/uname", "/bin/uname", "/usr/local/bin/uname",
-    "/usr/sbin/uname", "/usr/local/sbin/uname", "/sbin/uname",
-    "/usr/bin/lsb_release", "/bin/lsb_release", "/usr/local/bin/lsb_release",
-    "/usr/sbin/lsb_release", "/usr/local/sbin/lsb_release", "/sbin/lsb_release",
-])
-
-# --------------------------------------------------------------------------- #
 #  Public API
 # --------------------------------------------------------------------------- #
 
