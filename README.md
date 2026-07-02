@@ -285,20 +285,11 @@ Interactive training pipeline. Prompts for a MalwareBazaar API key (optional —
 1. Ingests samples from MalwareBazaar (if key provided)
 2. Runs each through the sandbox pipeline
 3. Trains a RandomForestClassifier on the extracted features
-4. Saves to `ml/model.pkl`
-5. Attempts upload to GCS (requires authenticated `google-cloud-storage`)
+4. Saves to `ml/model.skops` and invalidates cache
 
 ```bash
 export MALWAREBAZAAR_AUTH_KEY="your-key"
 cascade-train
-```
-
-### `cascade-update`
-
-Downloads the latest pre-trained model from Google Cloud Storage (`cascade-analyzer-models` bucket, anonymous access). Falls back to the IsolationForest baseline if the download fails.
-
-```bash
-cascade-update
 ```
 
 ## MCP Server Security Analysis
