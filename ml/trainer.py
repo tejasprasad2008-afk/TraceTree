@@ -51,56 +51,63 @@ def train_model(skip_gcs: bool = False):
     X, y = _load_features_from_csv(csv_path)
     if X:
         console.print(f"[cyan]Loaded {len(X)} samples from {csv_path.name}. Skipping sandbox re-run.[/]")
-        from ml.detector import clear_model_cache  # noqa: F401 (used below after model saved)
+        from ml.detector import clear_model_cache  # noqa: F401
     else:
-        console.print("[cyan]No usable CSV found — running sandbox on package lists...[/]")
-        malicious_pkgs = load_dataset(base_dir / "data" / "malicious_packages_expanded.txt")
-        clean_pkgs = load_dataset(base_dir / "data" / "clean_packages_expanded.txt")
+        # Fallback to labeled_fixtures.csv
+        fixtures_path = base_dir / "data" / "labeled_fixtures.csv"
+        X, y = _load_features_from_csv(fixtures_path)
+        if X:
+            console.print(f"[cyan]Loaded {len(X)} samples from committed labeled fixtures ({fixtures_path.name}). Skipping sandbox run.[/]")
+            from ml.detector import clear_model_cache  # noqa: F401
+        else:
+            console.print("[cyan]No usable CSV or fixtures found — running sandbox on package lists...[/]")
+            malicious_pkgs = load_dataset(base_dir / "data" / "malicious_packages_expanded.txt")
+            clean_pkgs = load_dataset(base_dir / "data" / "clean_packages_expanded.txt")
 
-        if not malicious_pkgs or not clean_pkgs:
-            console.print("[bold red]Error:[/] Dataset files missing in data/ directory.")
-            return
+            if not malicious_pkgs or not clean_pkgs:
+                console.print("[bold red]Error:[/] Dataset files missing in data/ directory.")
+                return
 
-        from sandbox.sandbox import run_sandbox
-        from monitor.parser import parse_strace_log
-        from graph.builder import build_cascade_graph
-        from ml.detector import map_features, clear_model_cache
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+            from sandbox.sandbox import run_sandbox
+            from monitor.parser import parse_strace_log
+            from graph.builder import build_cascade_graph
+            from ml.detector import map_features, clear_model_cache
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        all_packages = [(pkg, 1) for pkg in malicious_pkgs] + [(pkg, 0) for pkg in clean_pkgs]
+            all_packages = [(pkg, 1) for pkg in malicious_pkgs] + [(pkg, 0) for pkg in clean_pkgs]
 
-        def process_package(pkg, label):
-            try:
-                log_path = run_sandbox(pkg)
-                if not log_path:
+            def process_package(pkg, label):
+                try:
+                    log_path = run_sandbox(pkg)
+                    if not log_path:
+                        return None
+                    parsed = parse_strace_log(log_path)
+                    graph = build_cascade_graph(parsed)
+                    features = map_features(graph, parsed)
+                    return features, label
+                except Exception as e:
+                    console.print(f"\n[red]Failed to extract features for {pkg}: {e}[/]")
                     return None
-                parsed = parse_strace_log(log_path)
-                graph = build_cascade_graph(parsed)
-                features = map_features(graph, parsed)
-                return features, label
-            except Exception as e:
-                console.print(f"\n[red]Failed to extract features for {pkg}: {e}[/]")
-                return None
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console
-        ) as progress:
-            task = progress.add_task(
-                f"[cyan]Training model in parallel across {len(all_packages)} packages...",
-                total=len(all_packages)
-            )
-            max_workers = int(os.environ.get("TRACETREE_TRAIN_WORKERS", 4))
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {executor.submit(process_package, pkg, label): pkg for pkg, label in all_packages}
-                for future in as_completed(futures):
-                    result = future.result()
-                    if result:
-                        features, label = result
-                        X.append(features)
-                        y.append(label)
-                    progress.advance(task)
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                task = progress.add_task(
+                    f"[cyan]Training model in parallel across {len(all_packages)} packages...",
+                    total=len(all_packages)
+                )
+                max_workers = int(os.environ.get("TRACETREE_TRAIN_WORKERS", 4))
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {executor.submit(process_package, pkg, label): pkg for pkg, label in all_packages}
+                    for future in as_completed(futures):
+                        result = future.result()
+                        if result:
+                            features, label = result
+                            X.append(features)
+                            y.append(label)
+                        progress.advance(task)
 
     if not X:
         console.print("[bold red]Failed to extract meaningful features from any sandbox execution.[/]")
@@ -129,6 +136,10 @@ def train_model(skip_gcs: bool = False):
     clear_model_cache()
 
     console.print(f"[bold green]✔ Model efficiently saved natively to {model_path}[/]")
+
+    # Run evaluation harness
+    from ml.evaluate import evaluate_model
+    evaluate_model(X, y)
 
 if __name__ == "__main__":
     train_model()
