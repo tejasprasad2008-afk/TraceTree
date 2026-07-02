@@ -41,7 +41,7 @@ def _load_features_from_csv(csv_path: Path):
     return X, y
 
 
-def train_model(skip_gcs: bool = False):
+def train_model():
     console = Console()
 
     base_dir = Path(__file__).parent.parent

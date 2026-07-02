@@ -201,7 +201,17 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
     mode = os.environ.get("TRACETREE_SANDBOX_MODE", "docker")
 
     if mode == "direct":
-        # Direct execution mode (no Docker) — used in cloud jobs or CI
+        # ⚠ WARNING: NO SANDBOX ISOLATION ⚠
+        # Direct mode installs and executes the target package on the HOST machine
+        # with full network access. There is NO container, NO network drop, and NO
+        # filesystem isolation. Only use this in a throwaway CI VM or an ephemeral
+        # cloud job where the entire environment is discarded after the run.
+        # NEVER run direct mode on a developer workstation or shared machine.
+        console.print(
+            "[bold red]⚠ DIRECT MODE — NO ISOLATION ⚠[/]\n"
+            "[red]Target package will be installed on the HOST with full network access.\n"
+            "Only safe in a throwaway CI VM. Do NOT use on a workstation.[/]"
+        )
         import subprocess
         log_dir = Path.cwd() / "logs"
         log_dir.mkdir(exist_ok=True)

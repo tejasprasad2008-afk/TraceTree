@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import uuid
 import os
+import shlex
 import subprocess
 import sys
 
@@ -191,54 +192,65 @@ async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
 class CommandRequest(BaseModel):
     command: str
 
+_ALLOWED_SUBCOMMANDS = frozenset([
+    "analyze", "scan", "mcp", "diff", "scan-guardian", "install-hook",
+    "uninstall-hook", "train", "check", "dashboard",
+])
+
 @app.post("/api/execute")
-async def execute_command(request: CommandRequest):
-    cmd = request.command.strip()
-    
-    # Validation: Only allow running python3 cli.py or python cli.py or cascade-analyze
-    is_valid = (
-        cmd.startswith("python3 cli.py") or 
-        cmd.startswith("python cli.py") or 
-        cmd.startswith("cascade-analyze") or
-        cmd.startswith("./cli.py")
-    )
-    if not is_valid:
+async def execute_command(request: CommandRequest, api_key: str = Depends(verify_api_key)):
+    raw = request.command.strip()
+
+    # Parse into argv to prevent shell metacharacter injection.
+    try:
+        parts = shlex.split(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid command syntax: {e}")
+
+    if not parts:
+        raise HTTPException(status_code=400, detail="Empty command.")
+
+    # Strip leading interpreter + script to reach the subcommand.
+    # Accepted prefixes: ["python3", "cli.py", ...], ["cascade-analyze", ...], etc.
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cli_path = os.path.join(project_root, "cli.py")
+
+    if parts[0] in ("python3", "python", "./cli.py", "cascade-analyze"):
+        # Normalise to [sys.executable, cli_path, subcommand, ...]
+        rest = parts[1:]
+        if rest and rest[0] in ("cli.py", "./cli.py"):
+            rest = rest[1:]
+        argv = [sys.executable, cli_path] + rest
+    else:
         raise HTTPException(
-            status_code=400, 
-            detail="Forbidden. You can only execute TraceTree CLI commands (e.g., 'python3 cli.py analyze')."
+            status_code=400,
+            detail="Forbidden. Only TraceTree CLI commands are accepted.",
         )
-    
-    # We want to make sure it runs the virtual environment's python if available
-    python_exe = sys.executable
-    cmd_parts = cmd.split(" ")
-    if cmd_parts[0] in ["python3", "python", "./cli.py"]:
-        cmd_parts[0] = python_exe
-        if len(cmd_parts) > 1 and cmd_parts[1] == "cli.py":
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            cmd_parts[1] = os.path.join(project_root, "cli.py")
-        cmd = " ".join(cmd_parts)
-    elif cmd_parts[0] == "cascade-analyze":
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cli_path = os.path.join(project_root, "cli.py")
-        cmd_parts[0] = python_exe
-        cmd_parts.insert(1, cli_path)
-        cmd = " ".join(cmd_parts)
+
+    # Validate the subcommand against an explicit allowlist.
+    subcommand = argv[2] if len(argv) > 2 else ""
+    if subcommand not in _ALLOWED_SUBCOMMANDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown subcommand '{subcommand}'. "
+                   f"Allowed: {sorted(_ALLOWED_SUBCOMMANDS)}",
+        )
 
     def run_process():
         env = {**os.environ, "PYTHONUNBUFFERED": "1"}
         proc = subprocess.Popen(
-            cmd,
-            shell=True,
+            argv,
+            shell=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            env=env
+            env=env,
         )
-        
+
         for line in iter(proc.stdout.readline, ""):
             yield f"data: {line}\n\n"
-            
+
         proc.stdout.close()
         proc.wait()
         yield f"data: \n--- PROCESS FINISHED WITH CODE {proc.returncode} ---\n\n"
