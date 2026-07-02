@@ -1339,7 +1339,9 @@ def check(
 
 
 @app.command(name="install-hook")
-def install_hook_cmd():
+def install_hook_cmd(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+):
     """
     Install the TraceTree shell hook.
 
@@ -1358,11 +1360,30 @@ def install_hook_cmd():
     sys.path.insert(0, str(hooks_dir))
     try:
         from install_hook import install_hook as _do_install
-        ok = _do_install()
+        ok = _do_install(yes=yes)
         if not ok:
             raise typer.Exit(1)
     except Exception as exc:
         console.print(f"[bold red]Install failed:[/] {exc}")
+        raise typer.Exit(1)
+
+
+@app.command(name="uninstall-hook")
+def uninstall_hook_cmd(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+):
+    """
+    Uninstall the TraceTree shell hook.
+    """
+    hooks_dir = Path(__file__).parent / "hooks"
+    sys.path.insert(0, str(hooks_dir))
+    try:
+        from install_hook import uninstall_hook as _do_uninstall
+        ok = _do_uninstall(yes=yes)
+        if not ok:
+            raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[bold red]Uninstall failed:[/] {exc}")
         raise typer.Exit(1)
 
 
@@ -1654,9 +1675,24 @@ install_hook_cli = typer.Typer(
 )
 
 @install_hook_cli.command()
-def _install_hook_cmd():
+def _install_hook_cmd(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+):
     """Install the TraceTree shell hook."""
-    install_hook_cmd()
+    install_hook_cmd(yes=yes)
+
+
+uninstall_hook_cli = typer.Typer(
+    name="cascade-uninstall-hook",
+    help="Uninstall the TraceTree shell hook.",
+)
+
+@uninstall_hook_cli.command()
+def _uninstall_hook_cmd(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+):
+    """Uninstall the TraceTree shell hook."""
+    uninstall_hook_cmd(yes=yes)
 
 
 def launch_dashboard():
