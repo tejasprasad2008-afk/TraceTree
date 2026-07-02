@@ -460,6 +460,10 @@ def analyze(
             transient=False,
         ) as progress:
             is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()))
+            verdict = confidence
+            risk_score = float(verdict.risk_score if hasattr(verdict, "risk_score") else verdict)
+            ml_probability = verdict.ml_probability if hasattr(verdict, "ml_probability") else None
+            reasons = list(verdict.reasons) if hasattr(verdict, "reasons") else []
 
         if not graph_data:
             if gui:
@@ -603,7 +607,7 @@ def analyze(
                     "rule_name": all_sig_names[0] if all_sig_names else "ML_Anomaly_Detection",
                     "all_signatures": all_sig_names,
                     "temporal_patterns": [p.get("pattern", str(p)) for p in temp_patterns] if temp_patterns else [],
-                    "severity": confidence / 10.0 if confidence else 5.0
+                    "severity": risk_score / 10.0 if risk_score else 5.0
                 }
                 package_metadata = {
                     "name": current_target,
@@ -622,7 +626,8 @@ def analyze(
                 if triage_results.is_false_positive():
                     console.print("[bold green]✔ AI False Positive Jury has OVERRIDDEN the verdict to CLEAN![/]")
                     is_malicious = False
-                    confidence = triage_results.confidence * 100.0
+                    risk_score = triage_results.confidence * 100.0
+                    reasons.append(f"AI False Positive Jury override (confidence {triage_results.confidence * 100.0:.1f}%)")
             except Exception as e:
                 import logging as _logging
                 _logging.getLogger("tracetree.cli").exception("AI Triage failed")
@@ -646,7 +651,13 @@ def analyze(
             conf_style = "bold green"
 
         console.print(Align.center(Panel.fit(verdict_text, title="Final Verdict", border_style=conf_style.split()[-1])))
-        console.print(Align.center(Text(f"Confidence Score: {confidence}%", style=conf_style)))
+        if ml_probability is not None:
+            console.print(Align.center(Text(f"ML Model Probability: {ml_probability:.1f}%", style="cyan")))
+        console.print(Align.center(Text(f"Rule-based Risk Score: {risk_score:.1f}/100", style=conf_style)))
+        
+        if reasons:
+            reasons_str = "\n".join([f"[bold red]•[/] {r}" for r in reasons])
+            console.print(Panel(reasons_str, title="[bold]Verdict Logic / Risk Explanations[/]", border_style="yellow", expand=False))
 
         # Summary line with both signatures and temporal patterns
         extras = []
@@ -675,7 +686,7 @@ def analyze(
                     yara_matches=yara_matches,
                     ngram_data=ngram_data,
                     is_malicious=is_malicious,
-                    confidence=confidence,
+                    confidence=risk_score,
                     output_path=sarif_path,
                 )
                 console.print(f"[bold green]✔[/] [dim]SARIF report written to {sarif_path}[/]")
@@ -710,7 +721,7 @@ def analyze(
                 "pid": current_target,
                 "target_type": sub_type,
                 "is_malicious": is_malicious,
-                "confidence_score": confidence,
+                "confidence_score": risk_score,
                 "total_severity": parsed_data.get("total_severity_score", 0.0),
                 "flagged_behaviors": flags,
                 "behavioral_signatures": [{
@@ -736,7 +747,7 @@ def analyze(
             })
             send_gui_telemetry("investigation_completed", {
                 "verdict": "MALICIOUS" if is_malicious else "CLEAN",
-                "confidence_score": confidence,
+                "confidence_score": risk_score,
                 "durationMs": 0
             })
 
@@ -1314,7 +1325,11 @@ def check(
 
     parsed = parse_strace_log(log_path)
     graph = build_cascade_graph(parsed)
-    is_malicious, confidence = detect_anomaly(graph, parsed)
+    verdict = detect_anomaly(graph, parsed)
+    is_malicious = verdict.is_malicious
+    risk_score = float(verdict.risk_score if hasattr(verdict, "risk_score") else verdict)
+    ml_probability = verdict.ml_probability if hasattr(verdict, "ml_probability") else None
+    reasons = list(verdict.reasons) if hasattr(verdict, "reasons") else []
 
     if is_malicious:
         verdict_text = Text("\n  MALICIOUS  \n", style="bold white on red", justify="center")
@@ -1328,7 +1343,12 @@ def check(
     _show_spider(console, spider, spider.state)
 
     console.print(Align.center(Panel.fit(verdict_text, title="Final Verdict", border_style=conf_style.split()[-1])))
-    console.print(Align.center(Text(f"Confidence Score: {confidence}%", style=conf_style)))
+    if ml_probability is not None:
+        console.print(Align.center(Text(f"ML Model Probability: {ml_probability:.1f}%", style="cyan")))
+    console.print(Align.center(Text(f"Rule-based Risk Score: {risk_score:.1f}/100", style=conf_style)))
+    if reasons:
+        reasons_str = "\n".join([f"[bold red]•[/] {r}" for r in reasons])
+        console.print(Panel(reasons_str, title="[bold]Verdict Logic / Risk Explanations[/]", border_style="yellow", expand=False))
 
     flags = parsed.get("flags", [])
     if flags:

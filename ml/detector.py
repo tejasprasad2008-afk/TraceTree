@@ -257,6 +257,22 @@ _SEVERITY_BOOST_THRESHOLDS = {
 }
 
 
+class AnomalyVerdict(tuple):
+    """
+    Custom return type for detect_anomaly.
+    Acts as a 2-tuple (is_malicious, risk_score) for backward compatibility,
+    but exposes additional fields for detailed reports.
+    """
+    def __new__(cls, is_malicious: bool, risk_score: float, ml_probability: Optional[float], reasons: List[str]):
+        return super().__new__(cls, (is_malicious, risk_score))
+
+    def __init__(self, is_malicious: bool, risk_score: float, ml_probability: Optional[float], reasons: List[str]):
+        self.is_malicious = is_malicious
+        self.risk_score = risk_score
+        self.ml_probability = ml_probability
+        self.reasons = reasons
+
+
 def _severity_adjusted_confidence(
     is_malicious: bool,
     ml_confidence: float,
@@ -264,69 +280,84 @@ def _severity_adjusted_confidence(
     sensitive_file_count: int,
     suspicious_network_count: int,
     temporal_pattern_count: int = 0,
-) -> Tuple[bool, float]:
+) -> Tuple[bool, float, List[str]]:
     """
-    Adjust the ML model's verdict using syscall severity and temporal evidence.
+    Adjust the ML model's verdict using syscall severity, signature, and temporal evidence.
 
-    The ML model's prediction is the primary signal.  Severity scoring and
-    temporal pattern detection act as **boosters**, not replacements:
-      - If total_severity >= critical threshold → override to malicious, conf ~95%
-      - If total_severity >= high threshold → boost confidence by +30%
-      - If total_severity >= medium threshold → boost confidence by +10%
-      - Each temporal pattern adds +15% confidence (they are strong signals)
-      - Individual sensitive file or suspicious network accesses add +5% each.
+    Scoring Rules:
+      1. Base score is the initial ML confidence/probability (0-100).
+      2. If total_severity >= 30.0 (Critical): Override to malicious (is_malicious = True),
+         and sets the risk score to min(99.0, max(confidence, 90.0) + 5.0).
+      3. If total_severity >= 15.0 (High): Boosts risk score by +30.0. Flips verdict to
+         malicious if the adjusted score exceeds 60.0.
+      4. If total_severity >= 5.0 (Medium): Boosts risk score by +10.0.
+      5. Each matched temporal pattern adds +15.0 to the risk score. If there are 2 or
+         more temporal patterns, the verdict is overridden to malicious.
+      6. Each sensitive file access adds +5.0 to the risk score.
+      7. Each suspicious network connection adds +5.0 to the risk score.
+      8. The final risk score is capped at 99.9.
 
     Returns:
-        (is_malicious_adjusted, confidence_adjusted)
+        (is_malicious_adjusted, risk_score, reasons)
     """
     confidence = ml_confidence
+    reasons = []
 
     # Critical severity override
     if total_severity >= _SEVERITY_BOOST_THRESHOLDS["critical"]:
-        return True, min(99.0, max(confidence, 90.0) + 5.0)
+        new_conf = min(99.0, max(confidence, 90.0) + 5.0)
+        reasons.append(f"Critical syscall severity override (total severity {total_severity:.1f} >= 30.0)")
+        return True, new_conf, reasons
 
     # High severity boost
     if total_severity >= _SEVERITY_BOOST_THRESHOLDS["high"]:
         confidence = min(99.0, confidence + 30.0)
+        reasons.append(f"High syscall severity boost (+30.0 risk, total severity {total_severity:.1f} >= 15.0)")
         if confidence > 60.0 and not is_malicious:
-            # ML said clean but evidence is strong — flip the verdict
             is_malicious = True
+            reasons.append("Verdict flipped to malicious due to high syscall severity and supporting evidence")
 
     # Medium severity boost
     elif total_severity >= _SEVERITY_BOOST_THRESHOLDS["medium"]:
         confidence = min(99.0, confidence + 10.0)
+        reasons.append(f"Medium syscall severity boost (+10.0 risk, total severity {total_severity:.1f} >= 5.0)")
 
     # Temporal patterns are strong signals — each adds +15%
-    confidence += temporal_pattern_count * 15.0
-    if temporal_pattern_count >= 2 and not is_malicious:
-        # Multiple temporal patterns → very suspicious, flip verdict
-        is_malicious = True
+    if temporal_pattern_count > 0:
+        confidence += temporal_pattern_count * 15.0
+        reasons.append(f"Temporal patterns matched: {temporal_pattern_count} (+{temporal_pattern_count * 15.0} risk)")
+        if temporal_pattern_count >= 2 and not is_malicious:
+            is_malicious = True
+            reasons.append("Verdict flipped to malicious due to multiple suspicious temporal patterns")
 
     # Individual evidence items
-    confidence += sensitive_file_count * 5.0
-    confidence += suspicious_network_count * 5.0
+    if sensitive_file_count > 0:
+        confidence += sensitive_file_count * 5.0
+        reasons.append(f"Sensitive file accesses: {sensitive_file_count} (+{sensitive_file_count * 5.0} risk)")
+    if suspicious_network_count > 0:
+        confidence += suspicious_network_count * 5.0
+        reasons.append(f"Suspicious network connections: {suspicious_network_count} (+{suspicious_network_count * 5.0} risk)")
 
     # Cap
     confidence = min(99.9, confidence)
 
-    return is_malicious, round(confidence, 1)
+    return is_malicious, round(confidence, 1), reasons
 
 
 def detect_anomaly(
     graph_data: Dict[str, Any], parsed_data: Dict[str, Any]
-) -> Tuple[bool, float]:
+) -> AnomalyVerdict:
     """
     Detect whether the analyzed package exhibits malicious behavior.
 
-    Combines the ML model's prediction with syscall severity scoring
-    for a boosted confidence score.
-
-    Backward compatibility: if the loaded model was trained on fewer
-    features (e.g. 5), only the first N features are passed to it.
-    The extra features are used exclusively for the severity boost.
+    Combines the ML model's prediction with syscall severity scoring.
 
     Returns:
-        (is_malicious, confidence) where confidence is 0.0-99.9%.
+        AnomalyVerdict containing:
+          - is_malicious (bool)
+          - risk_score (float, 0-100)
+          - ml_probability (float, 0-100 or None)
+          - reasons (List[str])
     """
     target_features = map_features(graph_data, parsed_data)
 
@@ -352,6 +383,7 @@ def detect_anomaly(
         prediction = model.predict(X_target)[0]
         is_malicious = bool(prediction == 1)
         proba = model.predict_proba(X_target)[0]
+        ml_probability = float(proba[1] * 100)
         ml_confidence = max(proba) * 100
     else:
         # IsolationForest fallback — may need full vector
@@ -361,6 +393,7 @@ def detect_anomaly(
         prediction = model.predict(X_iso)[0]
         is_malicious = bool(prediction == -1)
         raw_score = model.decision_function(X_iso)[0]
+        ml_probability = None
         if is_malicious:
             ml_confidence = min(99.9, max(50.0, 50.0 + abs(raw_score) * 200))
         else:
@@ -373,7 +406,7 @@ def detect_anomaly(
     suspicious_nets = stats.get("suspicious_network_count", 0)
     temporal_patterns = stats.get("temporal_pattern_count", 0)
 
-    is_malicious, confidence = _severity_adjusted_confidence(
+    is_malicious, risk_score, reasons = _severity_adjusted_confidence(
         is_malicious,
         ml_confidence,
         total_severity,
@@ -382,7 +415,7 @@ def detect_anomaly(
         temporal_patterns,
     )
 
-    result = (is_malicious, confidence)
+    result = AnomalyVerdict(is_malicious, risk_score, ml_probability, reasons)
     _PREDICTION_CACHE[feature_hash] = result
     
     return result
