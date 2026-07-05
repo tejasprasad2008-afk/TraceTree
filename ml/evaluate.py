@@ -7,6 +7,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score, confusion_m
 from rich.console import Console
 from rich.table import Table
 
+
 def evaluate_model(X, y, test_size=0.3, random_state=42):
     console = Console()
     

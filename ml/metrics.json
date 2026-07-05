@@ -1,0 +1,11 @@
+{
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1_score": 1.0,
+  "false_positive_rate": 0.0,
+  "accuracy": 1.0,
+  "cv_accuracy_mean": 1.0,
+  "cv_accuracy_std": 0.0,
+  "training_samples": 5030,
+  "n_estimators": 200
+}

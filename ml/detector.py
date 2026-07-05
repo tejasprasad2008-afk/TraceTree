@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 from rich.console import Console
 
@@ -9,6 +9,10 @@ console = Console()
 
 import hashlib
 import json
+from ml.models.versioning import ModelVersionManager
+from zipfile import ZipFile
+import json
+import skops.io as sio
 
 # Global model cache to avoid repeated disk I/O and unpickling
 _MODEL_CACHE = None
@@ -112,9 +116,6 @@ def safe_load_model(filepath: Path):
     Safely load a model file using skops.io.
     Inspects type information in the schema first and rejects any forbidden types.
     """
-    import skops.io as sio
-    from zipfile import ZipFile
-    import json
     
     # 1. First run skops untrusted types check
     try:
@@ -186,7 +187,6 @@ def get_ml_model(version: str = None):
 
     # Try versioning system first
     if version:
-        from ml.models.versioning import ModelVersionManager
         manager = ModelVersionManager()
         version_path = manager.get_version(version)
         if version_path and version_path.exists():
