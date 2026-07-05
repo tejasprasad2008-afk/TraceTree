@@ -284,11 +284,11 @@ def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
         
     return tree
 
-def perform_analysis(target: str, target_type: str, progress, console, workspace_root: str = None, controlled_network: bool = False) -> Tuple[bool, float, dict, dict, list, list, list, dict]:
+def perform_analysis(target: str, target_type: str, progress, console, workspace_root: str = None, controlled_network: bool = False) -> Tuple[bool, float, dict, dict, list, list, list, dict, str]:
     """Helper to run the full sandbox → parse → graph → ML pipeline for a single target.
 
     Returns:
-        (is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data)
+        (is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data, log_path)
     """
     from sandbox.sandbox import run_sandbox
     from monitor.parser import parse_strace_log
@@ -391,7 +391,7 @@ def perform_analysis(target: str, target_type: str, progress, console, workspace
         progress.update(task4, description=f"[bold red]✖[/] [dim]ML failed: {e}[/]")
         return False, 0.0, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data
 
-    return is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data
+    return is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data, log_path
 
 def send_gui_telemetry(event: str, payload: dict):
     import urllib.request
@@ -493,7 +493,7 @@ def analyze(
             console=console,
             transient=False,
         ) as progress:
-            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()), controlled_network=controlled_network)
+            is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data, log_path = perform_analysis(current_target, sub_type, progress, console, workspace_root=str(Path.cwd()), controlled_network=controlled_network)
             verdict = confidence
             risk_score = float(verdict.risk_score if hasattr(verdict, "risk_score") else verdict)
             ml_probability = verdict.ml_probability if hasattr(verdict, "ml_probability") else None
@@ -662,6 +662,38 @@ def analyze(
                     is_malicious = False
                     risk_score = triage_results.confidence * 100.0
                     reasons.append(f"AI False Positive Jury override (confidence {triage_results.confidence * 100.0:.1f}%)")
+
+                # Generate the Behavior Receipt
+                from orchestrator.ai_mesh import build_behavior_receipt
+                from ml.detector import AnomalyVerdict
+                final_verdict = AnomalyVerdict(is_malicious, risk_score, ml_probability, reasons)
+                
+                receipt = build_behavior_receipt(
+                    target=current_target,
+                    target_type=sub_type,
+                    verdict=final_verdict,
+                    graph_data=graph_data,
+                    parsed_data=parsed_data,
+                    sig_matches=sig_matches,
+                    temp_patterns=temp_patterns,
+                    yara_matches=yara_matches,
+                    log_path=log_path,
+                    controlled_network=controlled_network,
+                )
+                
+                # Save receipt to a JSON file
+                receipt_filename = f"{current_target.replace('/', '_')}_receipt.json"
+                try:
+                    with open(receipt_filename, "w") as rf:
+                        json.dump(receipt, rf, indent=2)
+                    console.print(f"[bold green]✔ Saved behavior receipt to: {receipt_filename}[/]")
+                except Exception as ex:
+                    console.print(f"[bold yellow]⚠ Could not write behavior receipt file: {ex}[/]")
+
+                # Generate and render the Analyst Report (Explainer)
+                console.print("[bold cyan]🧠 Generating AI Analyst Report (Explainer)...[/]")
+                analyst_report = orchestrator.generate_analyst_report(receipt)
+                render_ai_triage_panel("Analyst Report", analyst_report)
             except Exception as e:
                 import logging as _logging
                 _logging.getLogger("tracetree.cli").exception("AI Triage failed")
@@ -1033,7 +1065,7 @@ _SESSION_DIR = Path("/tmp/tracetree_sessions")
 
 def _run_analysis_for_diff(target: str, target_type: str, progress, console, workspace_root: str = None) -> Dict[str, Any]:
     """Run analysis and return a dict suitable for diff comparison."""
-    is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data = perform_analysis(target, target_type, progress, console, workspace_root=workspace_root)
+    is_malicious, confidence, graph_data, parsed_data, sig_matches, temp_patterns, yara_matches, ngram_data, log_path = perform_analysis(target, target_type, progress, console, workspace_root=workspace_root)
     return {
         "parsed_data": parsed_data,
         "graph_data": graph_data,
