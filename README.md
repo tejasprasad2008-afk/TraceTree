@@ -8,6 +8,7 @@
 
 ## Table of Contents
 * [Repository Structure](#repository-structure)
+* [Behavior receipt export](#behavior-receipt-export)
 * [The 8 Legs of the TraceTree Spider](#the-8-legs-of-the-tracetree-spider)
 * [How It Works](#how-it-works)
 * [What It Detects](#what-it-detects)
@@ -22,6 +23,11 @@
 * [MCP Server Security Analysis](#mcp-server-security-analysis)
 * [Architecture Overview](#architecture)
 * [Limitations & Blind Spots](#limitations--blind-spots)
+
+## Behavior receipt export
+
+TraceTree can be used as a review gate before agents or humans trust a package install. See [Behavior receipt export](docs/behavior-receipt-export.md) for a small JSON/SARIF-friendly receipt shape that summarizes target hash, sandbox policy, observed behavior, artifact hashes, verdict, and privacy defaults without exposing raw syscall logs.
+
 
 ## Repository Structure
 
