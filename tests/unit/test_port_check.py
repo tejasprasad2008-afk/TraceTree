@@ -8,7 +8,6 @@ Covers:
 - Custom host is forwarded correctly to connect_ex
 """
 import sys
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 with patch.dict("sys.modules", {

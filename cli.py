@@ -40,7 +40,6 @@ from rich.columns import Columns
 from rich.layout import Layout
 from rich.style import Style
 from sandbox.sandbox import run_sandbox
-import termios, tty
 
 app = typer.Typer(help="TraceTree Security Analyzer")
 console = Console()
@@ -56,6 +55,7 @@ def print_panel_with_trim(console_obj, content: str, title: str, border_style: s
 
     if sys.stdin.isatty():
         try:
+            import termios, tty
             console_obj.print("[dim]Press Ctrl+O to view full output, or any other key to continue...[/dim]", end="\r")
             fd = sys.stdin.fileno()
             old_settings = termios.tcgetattr(fd)

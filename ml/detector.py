@@ -11,7 +11,6 @@ import hashlib
 import json
 from ml.models.versioning import ModelVersionManager
 from zipfile import ZipFile
-import json
 import skops.io as sio
 
 # Global model cache to avoid repeated disk I/O and unpickling
