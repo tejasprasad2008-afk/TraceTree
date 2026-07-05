@@ -19,6 +19,8 @@ from typing import Dict, Any, List, Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from urllib.parse import urlparse
+import re
 
 log = logging.getLogger("tracetree.ai_mesh")
 console = Console()
@@ -79,7 +81,6 @@ class AIMeshOrchestrator:
 
     def check_connection_health(self) -> bool:
         """Performs a ping or head request to http://localhost:11434/api/tags."""
-        from urllib.parse import urlparse
         try:
             parsed = urlparse(self.ollama_url)
             base_url = f"{parsed.scheme}://{parsed.netloc}"
@@ -108,7 +109,6 @@ class AIMeshOrchestrator:
         except json.JSONDecodeError as jde:
             # Try to sanitize raw unescaped newlines inside JSON string values.
             # We look for text between double quotes and replace raw newlines with escaped \n.
-            import re
             def replacer(match):
                 s = match.group(0)
                 # Replace literal newlines and carriage returns with escaped counterparts
@@ -327,16 +327,15 @@ class AIMeshOrchestrator:
         vector_str = ", ".join(f"{name}: {feature_vector.get(name, 0)}" for name in sensor_names)
 
         system_prompt = (
-            "You are a Machine Learning Threat Contextualizer.\n"
+            "You are a Machine Learning Feature Vector Translator.\n"
             "You are given the 10-sensor behavioral feature vector used by TraceTree's Random Forest classifier.\n"
-            "Compare the provided sensor counts against typical malware vs. benign baseline statistics:\n"
-            "- Malware: High executables (execve), network connections, sensitive file reads, high max severity.\n"
-            "- Benign: High node/edge count, but zero suspicious networks and zero sensitive file reads.\n"
+            "Your only job is to describe what the raw sensor numbers represent. Do not decide whether the package is malicious or benign.\n"
+            "Provide an objective natural language summary of what these statistics imply about the installer behavior.\n"
             "Return a JSON response conforming to this schema:\n"
             "{\n"
-            "  \"prediction_validation\": \"explanation of why these numbers flag or clear the package\",\n"
-            "  \"suspected_threat_vector\": \"e.g., typosquatting exfiltration, container escape, or benign installer\",\n"
-            "  \"risk_multiplier\": number (1.0 to 3.0 scale matching structural risk)\n"
+            "  \"prediction_validation\": \"objective natural language translation of what the raw counts indicate\",\n"
+            "  \"suspected_threat_vector\": \"characterization of observed behavior profile (e.g. heavy network downloader, quiet library, process spawner)\",\n"
+            "  \"risk_multiplier\": number (1.0 to 3.0 scale measuring system call density)\n"
             "}"
         )
 
@@ -376,7 +375,6 @@ class AIMeshOrchestrator:
         2. Any matched signature in _HARDBLOCK_SIGNATURES
         3. Package name looks like a hex hash / random sample filename
         """
-        import re
 
         severity = float(matched_rule.get("severity", 0.0))
         all_sigs: List[str] = list(matched_rule.get("all_signatures", []))
@@ -520,6 +518,33 @@ class AIMeshOrchestrator:
             "best_practices": ["Sanitize all input", "Avoid shell=True"]
         }
 
+    def generate_analyst_report(self, behavior_receipt: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Takes the generated Behavior Receipt (including the RF verdict)
+        and asks the AI to write a developer-friendly security explanation
+        of the findings, explaining *why* the package was flagged or cleared.
+        """
+        system_prompt = (
+            "You are a Security Analyst Explainer.\n"
+            "You are given a Behavior Receipt summarizing a package's execution in a sandbox and the Random Forest model's verdict.\n"
+            "Your job is to read this receipt and draft a developer-friendly, human-sounding report.\n"
+            "Explain what the package did in plain English, why the Random Forest model made its decision, and what risk it poses to the developer's workstation.\n"
+            "Do not use em dashes in your response. Keep it objective, professional, and clear.\n"
+            "Return a JSON response conforming to this schema:\n"
+            "{\n"
+            "  \"summary\": \"natural language summary of the package activity and verdict\",\n"
+            "  \"risk_assessment\": \"explanation of the risk posed (e.g. none, low, or high reverse-shell/exfiltration risk)\",\n"
+            "  \"recommendation\": \"what the developer should do next (e.g. safe to install, review code, or block package)\"\n"
+            "}"
+        )
+
+        prompt = f"{system_prompt}\n\n### Behavior Receipt:\n{json.dumps(behavior_receipt, indent=2)}"
+        return self._invoke_llm(prompt) or {
+            "summary": "Fallback analyst summary: no AI response received.",
+            "risk_assessment": "UNKNOWN",
+            "recommendation": "REVIEW"
+        }
+
 
 # =============================================================================
 # Developer UI Panel Rendering (surfacing back to analyst console)
@@ -605,3 +630,160 @@ def render_ai_triage_panel(leg_name: str, results: Dict[str, Any]):
             border_style="yellow",
             expand=False
         ))
+
+    elif leg_name in ("Analyst Report", "Behavior Receipt Explainer"):
+        content_table = Table(show_header=False, box=None)
+        content_table.add_column("Key", style="bold cyan")
+        content_table.add_column("Value")
+        
+        content_table.add_row("Summary", results.get("summary", ""))
+        content_table.add_row("Risk Assessment", results.get("risk_assessment", ""))
+        content_table.add_row("Recommendation", f"[bold yellow]{results.get('recommendation', 'REVIEW')}[/]")
+        
+        console.print(Panel(
+            content_table,
+            title=title,
+            border_style="cyan",
+            expand=False
+        ))
+
+
+def build_behavior_receipt(
+    target: str,
+    target_type: str,
+    verdict: Any,  # AnomalyVerdict object
+    graph_data: Dict[str, Any],
+    parsed_data: Dict[str, Any],
+    sig_matches: List[Dict[str, Any]],
+    temp_patterns: List[Dict[str, Any]],
+    yara_matches: List[Dict[str, Any]],
+    log_path: Optional[str] = None,
+    controlled_network: bool = False,
+) -> Dict[str, Any]:
+    """
+    Builds a standardized behavior receipt dict conforming to
+    docs/behavior-receipt-export.md schema.
+    """
+    import hashlib
+    from datetime import datetime, timezone
+    
+    # 1. Target metadata
+    # Parse version if name has @ (e.g. package@version)
+    name = target
+    version = "unknown"
+    if "@" in target and not target.startswith("@"): # e.g. lodash@4.17.21
+        parts = target.split("@")
+        name = parts[0]
+        version = parts[1]
+    elif target.startswith("@") and target.count("@") > 1: # e.g. @types/node@14.0.0
+        parts = target.rsplit("@", 1)
+        name = parts[0]
+        version = parts[1]
+        
+    # Calculate SHA256 of target file if exists, else hash the target name
+    target_sha = "sha256:"
+    target_path = Path(target)
+    if target_path.is_file():
+        try:
+            h = hashlib.sha256()
+            with open(target_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            target_sha += h.hexdigest()
+        except Exception:
+            target_sha += hashlib.sha256(target.encode()).hexdigest()
+    else:
+        target_sha += hashlib.sha256(target.encode()).hexdigest()
+
+    # 2. Log and graph hashes
+    strace_hash = ""
+    if log_path and Path(log_path).exists():
+        try:
+            h = hashlib.sha256()
+            with open(log_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            strace_hash = "sha256:" + h.hexdigest()
+        except Exception:
+            pass
+            
+    graph_str = json.dumps(graph_data)
+    graph_hash = "sha256:" + hashlib.sha256(graph_str.encode()).hexdigest()
+
+    # 3. Stats from graph_data or parsed_data
+    stats = graph_data.get("stats", {})
+    process_count = stats.get("node_count", 0) # approximation of nodes/processes
+    # Count clone/execve if events exist
+    events = parsed_data.get("events", [])
+    if events:
+        clones = sum(1 for e in events if e.get("type") in ("clone", "fork", "vfork", "execve"))
+        if clones > 0:
+            process_count = clones + 1
+            
+    file_write_count = stats.get("file_write_count", 0)
+    if file_write_count == 0 and events:
+        file_write_count = sum(1 for e in events if e.get("type") == "write" or (e.get("type") == "open" and "write" in str(e.get("details", {}).get("flags", ""))))
+
+    external_connect = stats.get("network_conn_count", 0)
+    sensitive_read = stats.get("sensitive_file_count", 0)
+
+    # 4. Matched signatures
+    matched_sigs = []
+    for sm in sig_matches:
+        matched_sigs.append(sm.get("name", ""))
+    for ym in yara_matches:
+        matched_sigs.append(ym.get("rule_name", ""))
+        
+    matched_temps = [p.get("pattern", str(p)) for p in temp_patterns]
+
+    # 5. Verdict parameters
+    is_malicious = getattr(verdict, "is_malicious", False)
+    risk_score = float(getattr(verdict, "risk_score", 0.0))
+    reasons = list(getattr(verdict, "reasons", []))
+    reason_str = reasons[0] if reasons else ("suspicious behavior flagged" if is_malicious else "no suspicious footprints flagged")
+    
+    # 6. Build final schema
+    net_policy = "controlled-network-sinkhole" if controlled_network else "blocked-after-fetch"
+    
+    receipt = {
+        "schema": "tracetree.behavior_receipt.v1",
+        "run_id": f"tracetree-{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        "target": {
+            "type": target_type,
+            "name": name,
+            "version": version,
+            "source": "package-lock" if target_type in ("pip", "npm") else "direct",
+            "artifact_sha256": target_sha
+        },
+        "sandbox": {
+            "mode": "docker-strace",
+            "network_policy": net_policy,
+            "timeout_seconds": 30,
+            "image_digest": "sha256:4b918b2c4bf8a332dfa9a3b6" # mock base container digest
+        },
+        "artifacts": {
+            "strace_log_sha256": strace_hash,
+            "graph_sha256": graph_hash,
+            "sarif_sha256": ""
+        },
+        "observed_behavior": {
+            "process_count": process_count,
+            "file_write_count": file_write_count,
+            "external_connect_count": external_connect,
+            "sensitive_file_read_count": sensitive_read,
+            "matched_signatures": matched_sigs,
+            "matched_temporal_patterns": matched_temps
+        },
+        "verdict": {
+            "decision": "suspicious" if is_malicious else "clean",
+            "confidence": round(risk_score / 100.0, 3),
+            "reason": reason_str,
+            "review_required": is_malicious or len(matched_sigs) > 0 or risk_score >= 50.0
+        },
+        "privacy": {
+            "raw_syscalls_included": False,
+            "environment_values_included": False,
+            "secrets_included": False
+        }
+    }
+    return receipt
