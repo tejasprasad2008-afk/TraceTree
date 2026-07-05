@@ -15,6 +15,9 @@ setup(
     description="Cascading Behavioral Propagation Analyzer for Python Packages",
     packages=find_packages(),
     py_modules=["cli"],
+    package_data={
+        "ml": ["model.skops", "metrics.json"],
+    },
     install_requires=[
         "typer>=0.9.0",
         "rich>=13.4.0",
@@ -25,7 +28,7 @@ setup(
         "docker>=7.0.0",
         "google-cloud-storage>=2.10.0",
         "requests>=2.25.1",
-        "skops>=0.10.0",
+        "skops>=0.12.0",
     ],
     entry_points={
         "console_scripts": [
@@ -35,6 +38,7 @@ setup(
             "cascade-check=cli:check_cli",
             "cascade-scan=cli:scan_app",
             "cascade-install-hook=cli:install_hook_cli",
+            "cascade-uninstall-hook=cli:uninstall_hook_cli",
         ],
     },
     cmdclass={

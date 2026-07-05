@@ -21,7 +21,7 @@ dependencies = [
     "docker>=7.0.0",
     "google-cloud-storage>=2.10.0",
     "requests>=2.25.1",
-    "skops>=0.10.0",
+    "skops>=0.12.0",
 ]
 
 [project.scripts]
@@ -31,6 +31,7 @@ cascade-watch = "cli:watch_app"
 cascade-check = "cli:check_cli"
 cascade-scan = "cli:scan_app"
 cascade-install-hook = "cli:install_hook_cli"
+cascade-uninstall-hook = "cli:uninstall_hook_cli"
 cascade-dashboard = "cli:dashboard_cli"
 
 [tool.setuptools]

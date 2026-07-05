@@ -4,6 +4,7 @@ import tarfile
 import tempfile
 from pathlib import Path
 from rich.console import Console
+import subprocess
 
 console = Console()
 
@@ -212,7 +213,6 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
             "[red]Target package will be installed on the HOST with full network access.\n"
             "Only safe in a throwaway CI VM. Do NOT use on a workstation.[/]"
         )
-        import subprocess
         log_dir = Path.cwd() / "logs"
         log_dir.mkdir(exist_ok=True)
         log_file_path = log_dir / f"{Path(target).name}_{target_type}_strace.log"

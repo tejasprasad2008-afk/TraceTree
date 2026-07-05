@@ -8,19 +8,8 @@ Covers:
 - Custom host is forwarded correctly to connect_ex
 """
 import sys
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
-
-# Ensure project root is importable even when pytest is invoked from the tests/ dir
-_PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
-# cli.py imports typer, rich, sandbox, etc.  We only need _is_port_in_use, so
-# we monkey-patch the heavy dependencies before the import.
-# This keeps the test hermetic and fast.
 with patch.dict("sys.modules", {
     "typer": MagicMock(),
     "rich": MagicMock(),

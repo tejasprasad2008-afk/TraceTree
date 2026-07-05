@@ -6,6 +6,23 @@
 
 **TraceTree** (cascade-analyzer) is an autonomous security organism designed for the agentic era. It moves beyond simple scanning into a robust, hardened, and scalable detection ecosystem. Like its mascot, the spider, TraceTree weaves a comprehensive web of protection around your development workflow using its eight specialized "legs."
 
+## Table of Contents
+* [Repository Structure](#repository-structure)
+* [The 8 Legs of the TraceTree Spider](#the-8-legs-of-the-tracetree-spider)
+* [How It Works](#how-it-works)
+* [What It Detects](#what-it-detects)
+  * [Behavioral Signatures](#behavioral-signatures-8-patterns)
+  * [Temporal Patterns](#temporal-patterns-5-patterns)
+* [Supported Targets](#supported-targets)
+* [Quick Start (Skip to Installation)](#quick-start)
+  * [Prerequisites](#prerequisites)
+  * [Install](#install)
+  * [Run an Analysis](#run-an-analysis)
+* [CLI Reference](#cli-reference)
+* [MCP Server Security Analysis](#mcp-server-security-analysis)
+* [Architecture Overview](#architecture)
+* [Limitations & Blind Spots](#limitations--blind-spots)
+
 ## Repository Structure
 
 ```
