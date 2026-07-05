@@ -8,7 +8,7 @@
 
 ## Table of Contents
 * [Repository Structure](#repository-structure)
-* [Behavior receipt export](docs/behavior-receipt-export.md)
+* [Behavior receipt export](#behavior-receipt-export)
 * [The 8 Legs of the TraceTree Spider](#the-8-legs-of-the-tracetree-spider)
 * [How It Works](#how-it-works)
 * [What It Detects](#what-it-detects)
