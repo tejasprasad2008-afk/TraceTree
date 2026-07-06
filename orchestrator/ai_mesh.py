@@ -707,7 +707,9 @@ def build_behavior_receipt(
         except Exception:
             pass
             
-    graph_str = json.dumps(graph_data)
+    # Filter out non-serializable raw NetworkX graph object
+    serializable_graph = {k: v for k, v in graph_data.items() if k != "raw_graph"}
+    graph_str = json.dumps(serializable_graph)
     graph_hash = "sha256:" + hashlib.sha256(graph_str.encode()).hexdigest()
 
     # 3. Stats from graph_data or parsed_data
