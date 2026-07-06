@@ -19,6 +19,7 @@ from typing import Dict, Any, List
 from typing import Any, Dict, List
 
 from monitor.utils import is_sensitive_path
+from monitor.ngrams import ngram_similarity as _ngram_sim
 
 log = logging.getLogger(__name__)
 
@@ -176,7 +177,6 @@ def diff_analysis(
     ngram_similarity = 0.0
     if ngrams_a and ngrams_b:
         try:
-            from monitor.ngrams import ngram_similarity as _ngram_sim
 
             ngram_similarity = _ngram_sim(ngrams_a, ngrams_b)
         except ImportError:

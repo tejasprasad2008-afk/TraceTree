@@ -8,6 +8,10 @@ import os
 import shlex
 import subprocess
 import sys
+from graph.builder import build_cascade_graph
+from ml.detector import detect_anomaly
+from monitor.parser import parse_strace_log
+from sandbox.sandbox import run_sandbox
 
 # --- Security ---
 # Load API keys from environment variable for production
@@ -94,10 +98,6 @@ def run_real_analysis(analysis_id: str, package_name: str, target_type: str, env
     """
     Orchestrates the real TraceTree analysis pipeline.
     """
-    from sandbox.sandbox import run_sandbox
-    from monitor.parser import parse_strace_log
-    from graph.builder import build_cascade_graph
-    from ml.detector import detect_anomaly
     
     try:
         # 1. Sandbox Execution

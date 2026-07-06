@@ -20,6 +20,7 @@ Usage:
 
 import logging
 from typing import List, Dict, Any, Optional
+from monitor.signatures import match_signatures
 
 log = logging.getLogger(__name__)
 
@@ -316,7 +317,6 @@ def match_mcp_signatures(
         - detection_confidence: Confidence score
     """
     # Import the standard signature matcher
-    from monitor.signatures import match_signatures
 
     # Load MCP signatures
     mcp_sigs = load_mcp_signatures()

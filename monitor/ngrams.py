@@ -16,6 +16,8 @@ Usage:
 import logging
 from collections import Counter
 from typing import Dict, Any, List
+import hashlib
+import math
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +137,6 @@ def extract_ngrams(
           - top_ngrams: list of (ngram, count) tuples, sorted by frequency
           - fingerprint: SHA-256 hash string of the top-50 n-grams (for comparison)
     """
-    import hashlib
 
     categories = _parse_syscall_categories(log_path)
     if not categories:
@@ -276,7 +277,6 @@ def weighted_ngram_similarity(
     More accurate than Jaccard for comparing behavioral fingerprints because
     it accounts for n-gram frequencies, not just presence/absence.
     """
-    import math
 
     vec_a = ngrams_a.get("ngrams", {})
     vec_b = ngrams_b.get("ngrams", {})

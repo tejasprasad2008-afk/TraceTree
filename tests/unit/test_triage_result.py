@@ -5,9 +5,9 @@ If the class does not exist yet (concurrent agent still building it),
 the entire module is skipped gracefully.
 """
 import pytest
+from orchestrator.ai_mesh import TriageResult
 
 try:
-    from orchestrator.ai_mesh import TriageResult
     _TRIAGE_AVAILABLE = True
 except (ImportError, AttributeError):
     _TRIAGE_AVAILABLE = False

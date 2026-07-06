@@ -26,6 +26,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from monitor.ngrams import detect_suspicious_ngrams
 
 # Patterns that indicate sensitive data — redact these from SARIF output
 _SENSITIVE_PATTERNS = [
@@ -194,7 +195,6 @@ def _build_sarif_run(
 
     # --- N-gram suspicious pattern results ---
     if ngram_data:
-        from monitor.ngrams import detect_suspicious_ngrams
         suspicious_ng = detect_suspicious_ngrams(ngram_data)
         for sg in suspicious_ng:
             results.append({
@@ -337,7 +337,6 @@ def _build_sarif_rules(
 
     # N-gram rules
     if ngram_data:
-        from monitor.ngrams import detect_suspicious_ngrams
         suspicious_ng = detect_suspicious_ngrams(ngram_data)
         seen = set()
         for sg in suspicious_ng:

@@ -2,6 +2,10 @@ import pytest
 import os
 from unittest.mock import patch, MagicMock, mock_open, ANY
 from monitor.ai_analyzer import is_ollama_installed, is_ollama_alive
+from monitor.ai_analyzer import analyze_finding_with_ai
+from monitor.ai_analyzer import ensure_ollama_and_model
+from monitor.ai_analyzer import get_file_context
+from pathlib import Path
 
 @patch("shutil.which")
 def test_is_ollama_installed(mock_which):
@@ -32,8 +36,6 @@ def test_is_ollama_alive(mock_get):
 @patch("pathlib.Path.exists")
 @patch("builtins.open", new_callable=mock_open, read_data="line1\nline2\nline3\nline4\nline5\n")
 def test_get_file_context(mock_file, mock_exists):
-    from pathlib import Path
-    from monitor.ai_analyzer import get_file_context
 
     # Case 1: File does not exist
     mock_exists.return_value = False
@@ -56,7 +58,6 @@ def test_get_file_context(mock_file, mock_exists):
 @patch("monitor.ai_analyzer.is_ollama_alive")
 @patch("requests.post")
 def test_analyze_finding_with_ai(mock_post, mock_alive):
-    from monitor.ai_analyzer import analyze_finding_with_ai
 
     # Case 1: Ollama not alive
     mock_alive.return_value = False
@@ -112,7 +113,6 @@ def test_analyze_finding_with_ai(mock_post, mock_alive):
 def test_ensure_ollama_and_model(
     mock_console, mock_get, mock_popen, mock_run, mock_ask, mock_system, mock_which, mock_alive
 ):
-    from monitor.ai_analyzer import ensure_ollama_and_model
 
     # Case 1: Everything already set up
     mock_which.return_value = "/usr/local/bin/ollama"

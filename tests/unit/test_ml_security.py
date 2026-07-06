@@ -6,6 +6,7 @@ import numpy as np
 import skops.io as sio
 
 from ml.detector import safe_load_model, get_ml_model, clear_model_cache
+import pickle
 
 class ForbiddenPayload:
     def __reduce__(self):
@@ -42,7 +43,6 @@ def test_forbidden_payload_refused(tmp_path):
 def test_legacy_pickle_warning_and_fallback(tmp_path, monkeypatch):
     """Test that if a legacy model.pkl exists, a warning is printed and we fall back to IsolationForest."""
     # Write a dummy pickle file (even a valid pickling, or invalid one)
-    import pickle
     legacy_path = tmp_path / "model.pkl"
     rf = RandomForestClassifier(n_estimators=5, random_state=42)
     X = np.random.rand(10, 10)

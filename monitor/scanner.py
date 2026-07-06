@@ -93,6 +93,7 @@ def calculate_entropy(data: str) -> float:
     return entropy
 
 import os
+from monitor.yara import scan_with_yara
 
 # --------------------------------------------------------------------------- #
 #  Scanner Core
@@ -120,7 +121,6 @@ def scan_file_for_secrets(file_path: Path, skip_yara: bool = True) -> Generator[
     # Optimization: We now run YARA once for the entire directory in scan_directory()
     # to avoid the massive performance hit of redundant parent-directory scans.
     if not skip_yara:
-        from monitor.yara import scan_with_yara
         yara_matches = scan_with_yara(package_dir=str(file_path.parent))
         for m in yara_matches:
             if m["file_path"] == str(file_path):
@@ -225,7 +225,6 @@ def scan_directory(root_path: Path, ignore_git: bool = True) -> List[Dict[str, A
     # but the current monitor.yara.scan_with_yara expects a directory.
     # To fix this properly, we'll scan the files one-by-one but we'll 
     # ignore the monitor directory itself to avoid self-flagging.
-    from monitor.yara import scan_with_yara
     
     # Self-exclusion: Don't let the scanner report on its own rules
     source_files = [f for f in files_to_scan if 'monitor' not in f.parts]

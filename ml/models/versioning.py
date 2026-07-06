@@ -9,6 +9,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import argparse
 
 
 class ModelVersionManager:
@@ -145,7 +146,6 @@ def add_model_version_flags(parser):
 
 # Standalone entry point
 if __name__ == "__main__":
-    import argparse
     
     parser = argparse.ArgumentParser(description="Model version manager")
     subparsers = parser.add_subparsers(dest="command")
