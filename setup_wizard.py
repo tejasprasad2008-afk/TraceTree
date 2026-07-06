@@ -12,6 +12,14 @@ import shutil
 import platform
 import subprocess
 from pathlib import Path
+from rich.align import Align
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
+from rich.status import Status
+from rich.text import Text
+import docker
+import requests
 
 # Dynamically adjust PATH to prioritize typical macOS/Linux binary directories (e.g. Homebrew)
 for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
@@ -20,26 +28,18 @@ for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
 
 # Try importing requests for Ollama communication
 try:
-    import requests
 except ImportError:
     print("Requests library not found. Please run 'pip install requests' first.")
     sys.exit(1)
 
 # Try importing rich
 try:
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.prompt import Confirm, Prompt
-    from rich.status import Status
-    from rich.text import Text
-    from rich.align import Align
 except ImportError:
     print("Rich library not found. Please run 'pip install rich' first.")
     sys.exit(1)
 
 # Try importing docker
 try:
-    import docker
 except ImportError:
     docker = None
 

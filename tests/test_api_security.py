@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock
 import sys
 import types
 import asyncio
+import api.main
 
 # Mocking dependencies before anything else
 def mock_deps():
@@ -14,6 +15,7 @@ def mock_deps():
 
     if "fastapi" not in sys.modules:
         fastapi = create_dummy("fastapi")
+        fastapi.__path__ = []
         class MockApp:
             def add_middleware(self, *args, **kwargs): pass
             def post(self, *args, **kwargs): return lambda f: f
@@ -32,6 +34,10 @@ def mock_deps():
         fastapi_middleware_cors = create_dummy("fastapi.middleware.cors")
         fastapi_middleware_cors.CORSMiddleware = object
 
+    if "fastapi.responses" not in sys.modules:
+        fastapi_responses = create_dummy("fastapi.responses")
+        fastapi_responses.StreamingResponse = object
+
     if "pydantic" not in sys.modules:
         pydantic = create_dummy("pydantic")
         class BaseModel:
@@ -47,7 +53,6 @@ def test_api_keys_loading(monkeypatch):
     if "api.main" in sys.modules:
         del sys.modules["api.main"]
 
-    import api.main
     assert api.main.VALID_API_KEYS == {"key1", "key2"}
 
 def test_api_keys_missing(monkeypatch):
@@ -57,14 +62,12 @@ def test_api_keys_missing(monkeypatch):
         del sys.modules["api.main"]
 
     with pytest.raises(RuntimeError, match="TRACETREE_API_KEYS environment variable is not set"):
-        import api.main
 
 def test_verify_api_key_valid(monkeypatch):
     monkeypatch.setenv("TRACETREE_API_KEYS", "secret_key")
     if "api.main" in sys.modules:
         del sys.modules["api.main"]
 
-    import api.main
     result = asyncio.run(api.main.verify_api_key("secret_key"))
     assert result == "secret_key"
 
@@ -73,7 +76,6 @@ def test_verify_api_key_invalid(monkeypatch):
     if "api.main" in sys.modules:
         del sys.modules["api.main"]
 
-    import api.main
     with pytest.raises(api.main.HTTPException) as excinfo:
         asyncio.run(api.main.verify_api_key("wrong_key"))
     assert excinfo.value.status_code == 401

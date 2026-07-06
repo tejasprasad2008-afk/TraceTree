@@ -14,6 +14,7 @@ import math
 import pytest
 
 from monitor.yara import _calculate_entropy
+import string, itertools
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +38,6 @@ def test_two_equal_chars_returns_one():
 def test_high_entropy_base64_exceeds_threshold():
     """A pseudo-random base64 string of 1000 chars must have entropy >= 5.0."""
     # Use a deterministic but diverse base64-alphabet string to avoid flakiness
-    import string, itertools
     alphabet = string.ascii_letters + string.digits + "+/"
     # Cycle through the 64-character alphabet to get uniform-ish distribution
     payload = "".join(itertools.islice(itertools.cycle(alphabet), 1000))

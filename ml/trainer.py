@@ -5,6 +5,13 @@ from pathlib import Path
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.console import Console
 from sklearn.ensemble import RandomForestClassifier
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from graph.builder import build_cascade_graph
+from ml.detector import clear_model_cache  # noqa: F401
+from ml.detector import map_features, clear_model_cache
+from ml.evaluate import evaluate_model
+from monitor.parser import parse_strace_log
+from sandbox.sandbox import run_sandbox
 
 _FEATURE_COLUMNS = [
     "node_count", "edge_count", "network_conn_count",
@@ -51,14 +58,12 @@ def train_model():
     X, y = _load_features_from_csv(csv_path)
     if X:
         console.print(f"[cyan]Loaded {len(X)} samples from {csv_path.name}. Skipping sandbox re-run.[/]")
-        from ml.detector import clear_model_cache  # noqa: F401
     else:
         # Fallback to labeled_fixtures.csv
         fixtures_path = base_dir / "data" / "labeled_fixtures.csv"
         X, y = _load_features_from_csv(fixtures_path)
         if X:
             console.print(f"[cyan]Loaded {len(X)} samples from committed labeled fixtures ({fixtures_path.name}). Skipping sandbox run.[/]")
-            from ml.detector import clear_model_cache  # noqa: F401
         else:
             console.print("[cyan]No usable CSV or fixtures found — running sandbox on package lists...[/]")
             malicious_pkgs = load_dataset(base_dir / "data" / "malicious_packages_expanded.txt")
@@ -68,11 +73,6 @@ def train_model():
                 console.print("[bold red]Error:[/] Dataset files missing in data/ directory.")
                 return
 
-            from sandbox.sandbox import run_sandbox
-            from monitor.parser import parse_strace_log
-            from graph.builder import build_cascade_graph
-            from ml.detector import map_features, clear_model_cache
-            from concurrent.futures import ThreadPoolExecutor, as_completed
 
             all_packages = [(pkg, 1) for pkg in malicious_pkgs] + [(pkg, 0) for pkg in clean_pkgs]
 
@@ -138,7 +138,6 @@ def train_model():
     console.print(f"[bold green]✔ Model efficiently saved natively to {model_path}[/]")
 
     # Run evaluation harness
-    from ml.evaluate import evaluate_model
     evaluate_model(X, y)
 
 if __name__ == "__main__":

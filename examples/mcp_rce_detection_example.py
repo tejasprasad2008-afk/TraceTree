@@ -16,6 +16,7 @@ from monitor.mcp_signatures import load_mcp_signatures, match_mcp_signatures
 from monitor.mcp_report import generate_mcp_rce_report, calculate_overall_confidence
 from monitor.signatures import load_signatures, match_signatures
 from monitor.yara import scan_with_yara
+from monitor.parser import parse_strace_log
 
 
 def analyze_mcp_server_complete(
@@ -41,7 +42,6 @@ def analyze_mcp_server_complete(
 
     # Step 1: Parse strace log (using existing TraceTree parser)
     print("[1/5] Parsing strace log...")
-    from monitor.parser import parse_strace_log
     
     try:
         parsed_data = parse_strace_log(strace_log_path)

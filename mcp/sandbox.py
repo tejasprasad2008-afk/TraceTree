@@ -17,11 +17,11 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Dict
 from rich.console import Console
+import docker
 
 console = Console()
 
 try:
-    import docker
 except ImportError:
     docker = None
 
