@@ -26,9 +26,21 @@ log = logging.getLogger("tracetree.ai_mesh")
 console = Console()
 
 # Configure Ollama endpoint
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-if not OLLAMA_HOST.startswith("http://") and not OLLAMA_HOST.startswith("https://"):
-    OLLAMA_HOST = f"http://{OLLAMA_HOST}"
+_OLLAMA_ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+def _validate_ollama_host(url: str) -> str:
+    from urllib.parse import urlparse
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = f"http://{url}"
+    hostname = urlparse(url).hostname or ""
+    if hostname not in _OLLAMA_ALLOWED_HOSTS and not os.getenv("TRACETREE_OLLAMA_ALLOW_REMOTE"):
+        raise ValueError(
+            f"OLLAMA_HOST hostname '{hostname}' is not in the allowed list "
+            f"{_OLLAMA_ALLOWED_HOSTS}. Set TRACETREE_OLLAMA_ALLOW_REMOTE=1 to use a remote host."
+        )
+    return url
+
+OLLAMA_HOST = _validate_ollama_host(os.getenv("OLLAMA_HOST", "http://localhost:11434"))
 OLLAMA_GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
 MODEL_NAME = "qwen2.5-coder:7b"
 
@@ -648,6 +660,116 @@ def render_ai_triage_panel(leg_name: str, results: Dict[str, Any]):
         ))
 
 
+def render_terminal_receipt(receipt: Dict[str, Any]) -> str:
+    """
+    Renders a human-readable receipt in supermarket/ticket style.
+    Returns plain text — caller decides whether to print or persist.
+    """
+    from datetime import datetime, timezone
+
+    WIDTH = 54
+    SEP = "─" * WIDTH
+    THICK = "═" * WIDTH
+
+    def center(s: str) -> str:
+        return s.center(WIDTH)
+
+    def row(label: str, value: str) -> str:
+        gap = WIDTH - len(label) - len(value)
+        if gap < 1:
+            gap = 1
+        return f"{label}{' ' * gap}{value}"
+
+    target = receipt.get("target", {})
+    verdict_block = receipt.get("verdict", {})
+    behavior = receipt.get("observed_behavior", {})
+    artifacts = receipt.get("artifacts", {})
+    sandbox = receipt.get("sandbox", {})
+    privacy = receipt.get("privacy", {})
+
+    decision = verdict_block.get("decision", "unknown").upper()
+    confidence = verdict_block.get("confidence", 0.0)
+    review = verdict_block.get("review_required", False)
+    reason = verdict_block.get("reason", "")
+
+    sigs = behavior.get("matched_signatures", [])
+    temps = behavior.get("matched_temporal_patterns", [])
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    lines = [
+        THICK,
+        center("T R A C E T R E E"),
+        center("Behavioral Forensics Receipt"),
+        center(now),
+        THICK,
+        row("  Target", f"{target.get('name', '?')[:30]}@{target.get('version', '?')}  "),
+        row("  Type", f"{target.get('type', '?')}  "),
+        row("  Source", f"{target.get('source', '?')}  "),
+        SEP,
+        center("— SANDBOX —"),
+        row("  Mode", f"{sandbox.get('mode', '?')}  "),
+        row("  Network", f"{sandbox.get('network_policy', '?')}  "),
+        row("  Timeout", f"{sandbox.get('timeout_seconds', '?')}s  "),
+        SEP,
+        center("— BEHAVIOR SUMMARY —"),
+        row("  Processes", f"{behavior.get('process_count', 0)}  "),
+        row("  File writes", f"{behavior.get('file_write_count', 0)}  "),
+        row("  Ext. connections", f"{behavior.get('external_connect_count', 0)}  "),
+        row("  Sensitive reads", f"{behavior.get('sensitive_file_read_count', 0)}  "),
+    ]
+
+    if sigs:
+        lines.append(row("  Signatures", f"{len(sigs)}  "))
+        for s in sigs[:4]:
+            lines.append(f"    • {s[:WIDTH - 6]}")
+        if len(sigs) > 4:
+            lines.append(f"    + {len(sigs) - 4} more")
+
+    if temps:
+        lines.append(row("  Temporal patterns", f"{len(temps)}  "))
+        for t in temps[:3]:
+            lines.append(f"    • {t[:WIDTH - 6]}")
+
+    lines += [
+        SEP,
+        center("— ARTIFACTS —"),
+        f"  strace_sha256:",
+        f"    {artifacts.get('strace_log_sha256', 'N/A')[:WIDTH - 4]}",
+        f"  graph_sha256:",
+        f"    {artifacts.get('graph_sha256', 'N/A')[:WIDTH - 4]}",
+        SEP,
+        center("— PRIVACY —"),
+        row("  Raw syscalls included", f"{'YES' if privacy.get('raw_syscalls_included') else 'NO'}  "),
+        row("  Env values included", f"{'YES' if privacy.get('environment_values_included') else 'NO'}  "),
+        row("  Secrets included", f"{'YES' if privacy.get('secrets_included') else 'NO'}  "),
+        THICK,
+    ]
+
+    # Verdict block — prominent
+    if decision in ("SUSPICIOUS", "MALICIOUS"):
+        verdict_line = center(f"  *** {decision} ***  ")
+    else:
+        verdict_line = center(f"  [ {decision} ]  ")
+
+    lines += [
+        verdict_line,
+        row("  Confidence", f"{confidence * 100:.1f}%  "),
+        row("  Review required", f"{'YES' if review else 'NO'}  "),
+    ]
+    if reason:
+        lines.append(f"  Reason: {reason[:WIDTH - 10]}")
+
+    lines += [
+        THICK,
+        row("  Run ID", ""),
+        f"    {receipt.get('run_id', 'N/A')[:WIDTH - 4]}",
+        THICK,
+    ]
+
+    return "\n".join(lines)
+
+
 def build_behavior_receipt(
     target: str,
     target_type: str,
@@ -665,17 +787,22 @@ def build_behavior_receipt(
     docs/behavior-receipt-export.md schema.
     """
     import hashlib
+    import uuid as _uuid
     from datetime import datetime, timezone
     
     # 1. Target metadata
-    # Parse version if name has @ (e.g. package@version)
+    # Parse version if name has @ (e.g. package@version), else use basename for file paths.
     name = target
     version = "unknown"
-    if "@" in target and not target.startswith("@"): # e.g. lodash@4.17.21
+    _target_path_check = Path(target)
+    if _target_path_check.exists() and _target_path_check.is_file():
+        # File path — use stem as name (no version available from path)
+        name = _target_path_check.name
+    elif "@" in target and not target.startswith("@"):  # e.g. lodash@4.17.21
         parts = target.split("@")
         name = parts[0]
         version = parts[1]
-    elif target.startswith("@") and target.count("@") > 1: # e.g. @types/node@14.0.0
+    elif target.startswith("@") and target.count("@") > 1:  # e.g. @types/node@14.0.0
         parts = target.rsplit("@", 1)
         name = parts[0]
         version = parts[1]
@@ -736,7 +863,7 @@ def build_behavior_receipt(
     for ym in yara_matches:
         matched_sigs.append(ym.get("rule_name", ""))
         
-    matched_temps = [p.get("pattern", str(p)) for p in temp_patterns]
+    matched_temps = [p.get("pattern_name", p.get("pattern", str(p))) for p in temp_patterns]
 
     # 5. Verdict parameters
     is_malicious = getattr(verdict, "is_malicious", False)
@@ -749,19 +876,19 @@ def build_behavior_receipt(
     
     receipt = {
         "schema": "tracetree.behavior_receipt.v1",
-        "run_id": f"tracetree-{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        "run_id": f"tracetree-{_uuid.uuid4()}",
         "target": {
             "type": target_type,
             "name": name,
             "version": version,
-            "source": "package-lock" if target_type in ("pip", "npm") else "direct",
+            "source": "file" if _target_path_check.exists() and _target_path_check.is_file() else ("package-lock" if target_type in ("pip", "npm") else "direct"),
             "artifact_sha256": target_sha
         },
         "sandbox": {
             "mode": "docker-strace",
             "network_policy": net_policy,
             "timeout_seconds": 30,
-            "image_digest": "sha256:4b918b2c4bf8a332dfa9a3b6" # mock base container digest
+            "image_digest": "mock:container-digest-not-resolved"  # placeholder — resolve real digest at build time
         },
         "artifacts": {
             "strace_log_sha256": strace_hash,
