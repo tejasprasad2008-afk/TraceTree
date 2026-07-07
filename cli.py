@@ -173,6 +173,12 @@ def determine_target_type(target: str) -> str:
             return "bulk-npm"
         elif ext == ".txt" and path.name == "requirements.txt":
             return "bulk-pip"
+        elif ext == ".zip" and not target.endswith(".whl"):
+            # .zip files that are not Python wheels are treated as malware sample archives
+            # (e.g. MalwareBazaar downloads). Route to zip-malware sandbox.
+            return "zip-malware"
+        elif ext == ".whl":
+            return "pip"
     return "pip"
 
 
@@ -611,6 +617,7 @@ def analyze(
         # ── AI-native Triage (Legs 1-4, 5 & 8) ──
         # Issues 1 & 2 fix: reuse pre-flight orchestrator; guard against silent verdict corruption.
         ai_triage_ran = False
+        ai_analyst_report = None
         if ai and graph_data and orchestrator is not None:
             try:
                 from orchestrator.ai_mesh import render_ai_triage_panel, TriageResult
@@ -663,37 +670,9 @@ def analyze(
                     risk_score = triage_results.confidence * 100.0
                     reasons.append(f"AI False Positive Jury override (confidence {triage_results.confidence * 100.0:.1f}%)")
 
-                # Generate the Behavior Receipt
-                from orchestrator.ai_mesh import build_behavior_receipt
-                from ml.detector import AnomalyVerdict
-                final_verdict = AnomalyVerdict(is_malicious, risk_score, ml_probability, reasons)
-                
-                receipt = build_behavior_receipt(
-                    target=current_target,
-                    target_type=sub_type,
-                    verdict=final_verdict,
-                    graph_data=graph_data,
-                    parsed_data=parsed_data,
-                    sig_matches=sig_matches,
-                    temp_patterns=temp_patterns,
-                    yara_matches=yara_matches,
-                    log_path=log_path,
-                    controlled_network=controlled_network,
-                )
-                
-                # Save receipt to a JSON file
-                receipt_filename = f"{current_target.replace('/', '_')}_receipt.json"
-                try:
-                    with open(receipt_filename, "w") as rf:
-                        json.dump(receipt, rf, indent=2)
-                    console.print(f"[bold green]✔ Saved behavior receipt to: {receipt_filename}[/]")
-                except Exception as ex:
-                    console.print(f"[bold yellow]⚠ Could not write behavior receipt file: {ex}[/]")
-
-                # Generate and render the Analyst Report (Explainer)
-                console.print("[bold cyan]🧠 Generating AI Analyst Report (Explainer)...[/]")
-                analyst_report = orchestrator.generate_analyst_report(receipt)
-                render_ai_triage_panel("Analyst Report", analyst_report)
+                # Analyst report is generated after the receipt (see post-verdict block below).
+                # We store the orchestrator reference so the post-verdict block can call it.
+                # ai_analyst_report is populated there once the receipt exists.
             except Exception as e:
                 import logging as _logging
                 _logging.getLogger("tracetree.cli").exception("AI Triage failed")
@@ -758,6 +737,86 @@ def analyze(
                 console.print(f"[bold green]✔[/] [dim]SARIF report written to {sarif_path}[/]")
             except Exception as e:
                 console.print(f"[bold red]✖[/] [dim]SARIF export failed: {e}[/]")
+
+        # ── Behavior Receipt (always generated, independent of --ai) ──
+        import json as _json
+        from orchestrator.ai_mesh import build_behavior_receipt, render_terminal_receipt
+        from orchestrator.session import create_session, save_json, save_text, save_metadata, copy_file, append_index
+        from ml.detector import AnomalyVerdict as _AV
+
+        _final_verdict = _AV(is_malicious, risk_score, ml_probability, reasons)
+        receipt = build_behavior_receipt(
+            target=current_target,
+            target_type=sub_type,
+            verdict=_final_verdict,
+            graph_data=graph_data,
+            parsed_data=parsed_data,
+            sig_matches=sig_matches,
+            temp_patterns=temp_patterns,
+            yara_matches=yara_matches,
+            log_path=log_path,
+            controlled_network=controlled_network,
+        )
+
+        terminal_receipt_text = render_terminal_receipt(receipt)
+
+        # Create persistent session directory
+        try:
+            session_id, session_path = create_session(current_target)
+
+            save_json(session_path, "receipt.json", receipt)
+            save_text(session_path, "terminal_receipt.txt", terminal_receipt_text)
+
+            copy_file(session_path, log_path, "runtime.log")
+
+            _metadata = {
+                "target": current_target,
+                "target_type": sub_type,
+                "session_id": session_id,
+                "ai_enabled": ai,
+                "controlled_network": controlled_network,
+                "receipt_run_id": receipt.get("run_id"),
+            }
+            save_metadata(session_path, _metadata)
+
+            # If AI ran, generate analyst report now (receipt exists) and persist it
+            if ai and orchestrator is not None and ai_triage_ran:
+                try:
+                    console.print("[bold cyan]🧠 Generating AI Analyst Report (Explainer)...[/]")
+                    from orchestrator.ai_mesh import render_ai_triage_panel
+                    ai_analyst_report = orchestrator.generate_analyst_report(receipt)
+                    render_ai_triage_panel("Analyst Report", ai_analyst_report)
+                    save_json(session_path, "analyst_report.json", ai_analyst_report)
+                    # Plain-text markdown version
+                    _md = (
+                        f"# Analyst Report\n\n"
+                        f"## Summary\n{ai_analyst_report.get('summary', '')}\n\n"
+                        f"## Risk Assessment\n{ai_analyst_report.get('risk_assessment', '')}\n\n"
+                        f"## Recommendation\n{ai_analyst_report.get('recommendation', '')}\n"
+                    )
+                    save_text(session_path, "analyst_report.md", _md)
+                except Exception as _ae:
+                    console.print(f"[bold yellow]⚠ Analyst report failed: {_ae}[/]")
+
+            append_index(
+                session_id=session_id,
+                session_path=session_path,
+                target=current_target,
+                verdict="suspicious" if is_malicious else "clean",
+            )
+
+            console.print(f"\n[bold green]✔[/] [dim]Session saved → {session_path}[/]")
+        except Exception as _se:
+            console.print(f"[bold yellow]⚠ Session persistence failed: {_se}[/]")
+
+        # Display terminal receipt
+        console.print("\n")
+        console.print(Panel(
+            terminal_receipt_text,
+            title="[bold]Behavior Receipt[/]",
+            border_style="cyan",
+            expand=False,
+        ))
 
         console.print("\n" + "─" * console.width + "\n")
 
@@ -1060,7 +1119,14 @@ def mcp(
 #  Session guardian — watch & check commands
 # ------------------------------------------------------------------ #
 
-_SESSION_DIR = Path("/tmp/tracetree_sessions")
+def _session_dir() -> Path:
+    """Return a user-private session dir (avoids world-readable /tmp on shared hosts)."""
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    base = Path(xdg) / "tracetree" if xdg else Path.home() / ".local" / "share" / "tracetree" / "sessions"
+    base.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return base
+
+_SESSION_DIR = _session_dir()
 
 
 def _run_analysis_for_diff(target: str, target_type: str, progress, console, workspace_root: str = None) -> Dict[str, Any]:

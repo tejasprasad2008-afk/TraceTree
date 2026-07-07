@@ -75,7 +75,10 @@ _tracetree_init_hook() {
                 echo ""
 
                 # Start cascade-watch in background, detached
-                nohup cascade-watch "$_tt_abs_dir" </dev/null >"/tmp/tracetree_$(basename "$_tt_dir").log" 2>&1 &
+                # Sanitize repo name before interpolating into log path (prevents injection via malicious URL)
+                local _tt_safe_name
+                _tt_safe_name=$(basename "$_tt_dir" | tr -dc 'a-zA-Z0-9._-')
+                nohup cascade-watch "$_tt_abs_dir" </dev/null >"/tmp/tracetree_${_tt_safe_name}.log" 2>&1 &
             fi
 
             return $_tt_status

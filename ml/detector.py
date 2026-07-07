@@ -166,9 +166,16 @@ def safe_load_model(filepath: Path):
                 walk(item)
                 
     walk(schema)
-    
-    # Standard skops load
-    return sio.load(filepath)
+
+    # Pass explicit trusted list to skops — defence-in-depth alongside the allowlist check above
+    _trusted = [
+        "sklearn.ensemble._forest.RandomForestClassifier",
+        "sklearn.ensemble._iforest.IsolationForest",
+        "sklearn.tree._classes.DecisionTreeClassifier",
+        "sklearn.tree._classes.ExtraTreeRegressor",
+        "numpy.ndarray",
+    ]
+    return sio.load(filepath, trusted=_trusted)
 
 
 def get_ml_model(version: str = None):
@@ -301,10 +308,12 @@ def _severity_adjusted_confidence(
     confidence = ml_confidence
     reasons = []
 
-    # Critical severity override
+    # Critical severity: boost RF confidence by 25 pts, preserve the RF signal.
+    # Previously used max(confidence, 90.0) + 5.0 which hardcoded 95% for every sample
+    # with total_severity >= 30 — discarding the trained RF model's actual probability.
     if total_severity >= _SEVERITY_BOOST_THRESHOLDS["critical"]:
-        new_conf = min(99.0, max(confidence, 90.0) + 5.0)
-        reasons.append(f"Critical syscall severity override (total severity {total_severity:.1f} >= 30.0)")
+        new_conf = min(99.0, confidence + 25.0)
+        reasons.append(f"Critical syscall severity boost (+25 risk, total severity {total_severity:.1f} >= 30.0)")
         return True, new_conf, reasons
 
     # High severity boost

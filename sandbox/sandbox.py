@@ -177,6 +177,143 @@ echo "[exe] Analysis complete — log: $LOG_FILE" >&2
 """
 
 # --------------------------------------------------------------------------- #
+#  ZIP Malware analysis script (runs inside the container)
+# --------------------------------------------------------------------------- #
+
+_ZIP_MALWARE_ANALYZE_SCRIPT = r"""
+set -uo pipefail
+
+LOG_FILE="/tmp/strace.log"
+RESOURCE_FILE="/tmp/resources.json"
+EXTRACT_DIR="/tmp/malware_extracted"
+INPUT="/tmp/target.zip"
+
+mkdir -p "$EXTRACT_DIR"
+> "$LOG_FILE"
+
+echo '{"peak_memory_kb": 0, "disk_used_kb": 0, "file_count": 0}' > "$RESOURCE_FILE"
+
+# ---------- Step 1: extract with known malware-repo passwords ----------
+PASSWORDS=("infected" "malware" "virus" "infected!" "password" "Infected")
+EXTRACTED=false
+USED_PASSWORD=""
+
+for PASS in "${PASSWORDS[@]}"; do
+    if 7z x "$INPUT" -p"$PASS" -o"$EXTRACT_DIR" -y > /tmp/7z_out.txt 2>&1; then
+        echo "[zip] Extracted with password: $PASS" >&2
+        EXTRACTED=true
+        USED_PASSWORD="$PASS"
+        break
+    fi
+done
+
+if [ "$EXTRACTED" = false ]; then
+    if 7z x "$INPUT" -o"$EXTRACT_DIR" -y > /tmp/7z_out.txt 2>&1; then
+        echo "[zip] Extracted without password" >&2
+        EXTRACTED=true
+        USED_PASSWORD="(none)"
+    fi
+fi
+
+if [ "$EXTRACTED" = false ]; then
+    echo "[zip] CRITICAL: Could not extract ZIP with any known password" >&2
+    echo "ZIP_PASSWORD_UNKNOWN" > "$LOG_FILE"
+    exit 0
+fi
+
+# ---------- Step 2: network down before any payload execution ----------
+ip link set eth0 down 2>/dev/null || true
+echo "[zip] Network interface eth0 brought down before payload execution" >&2
+
+# ---------- Step 3: locate and execute payloads under strace with escape guard ----------
+FOUND_PAYLOAD=false
+ESCAPE_PATTERNS="ptrace.*PTRACE_ATTACH|unshare\(|setns\(|sysrq|/sys/kernel|capset\(.*0x[1-9a-f]|CLONE_NEWPID|CLONE_NEWNET|/proc/1/ns"
+
+run_with_escape_guard() {
+    local TRACE_LOG="$1"
+    shift
+    "$@" &
+    CHILD_PID=$!
+    while kill -0 "$CHILD_PID" 2>/dev/null; do
+        if grep -qEi "$ESCAPE_PATTERNS" "$TRACE_LOG" 2>/dev/null; then
+            echo "[SECURITY] Container escape attempt detected — killing payload PID $CHILD_PID" >&2
+            echo "ESCAPE_ATTEMPT_DETECTED" >> "$TRACE_LOG"
+            kill -9 "$CHILD_PID" 2>/dev/null || true
+            kill -9 -"$CHILD_PID" 2>/dev/null || true
+            return 1
+        fi
+        sleep 0.2
+    done
+    wait "$CHILD_PID" 2>/dev/null || true
+    return 0
+}
+
+while IFS= read -r -d '' payload; do
+    FILETYPE=$(file -b "$payload" 2>/dev/null || echo "unknown")
+    echo "[zip] Payload: $(basename "$payload") | type: $FILETYPE" >&2
+    PAYLOAD_LOG="/tmp/strace_payload_$$.log"
+    > "$PAYLOAD_LOG"
+
+    case "$FILETYPE" in
+        *ELF*executable* | *ELF*shared* | *ELF*)
+            chmod +x "$payload" 2>/dev/null || true
+            run_with_escape_guard "$PAYLOAD_LOG" \
+                strace -t -f -e trace=all -yy -s 1000 -o "$PAYLOAD_LOG" \
+                timeout 25 "$payload" > /dev/null 2>&1
+            ;;
+        *PE32* | *PE32+* | *MS-DOS* | *Windows* | *Portable\ Executable*)
+            if command -v wine64 &>/dev/null; then
+                run_with_escape_guard "$PAYLOAD_LOG" \
+                    strace -t -f -e trace=all -yy -s 1000 -o "$PAYLOAD_LOG" \
+                    timeout 25 wine64 "$payload" > /dev/null 2>&1
+            else
+                strace -t -f -e trace=file -yy -s 200 -o "$PAYLOAD_LOG" \
+                    timeout 10 file "$payload" > /dev/null 2>&1 || true
+            fi
+            ;;
+        *Python* | *python*)
+            run_with_escape_guard "$PAYLOAD_LOG" \
+                strace -t -f -e trace=all -yy -s 1000 -o "$PAYLOAD_LOG" \
+                timeout 25 python3 "$payload" > /dev/null 2>&1
+            ;;
+        *shell\ script* | *POSIX\ shell* | *Bourne*)
+            run_with_escape_guard "$PAYLOAD_LOG" \
+                strace -t -f -e trace=all -yy -s 1000 -o "$PAYLOAD_LOG" \
+                timeout 25 bash "$payload" > /dev/null 2>&1
+            ;;
+        *)
+            chmod +x "$payload" 2>/dev/null || true
+            strace -t -f -e trace=all -yy -s 1000 -o "$PAYLOAD_LOG" \
+                timeout 15 "$payload" > /dev/null 2>&1 || true
+            ;;
+    esac
+
+    if [ -s "$PAYLOAD_LOG" ]; then
+        cat "$PAYLOAD_LOG" >> "$LOG_FILE"
+        FOUND_PAYLOAD=true
+    fi
+
+    if grep -q "ESCAPE_ATTEMPT_DETECTED" "$LOG_FILE" 2>/dev/null; then
+        echo "[SECURITY] Escape confirmed — halting all further payload execution" >&2
+        break
+    fi
+
+done < <(find "$EXTRACT_DIR" -type f ! -name "*.txt" ! -name "*.json" -print0 2>/dev/null)
+
+if [ "$FOUND_PAYLOAD" = false ]; then
+    echo "[zip] No executable payloads found" >&2
+    find "$EXTRACT_DIR" -type f >&2
+    echo "NO_PAYLOAD_FOUND" > "$LOG_FILE"
+fi
+
+MEM_USED=$(grep MemAvailable /proc/meminfo | awk '{print $2}' || echo "0")
+FILE_COUNT=$(find "$EXTRACT_DIR" -type f 2>/dev/null | wc -l || echo "0")
+echo '{"peak_memory_kb": '"$MEM_USED"', "disk_used_kb": 0, "file_count": '"$FILE_COUNT"'}' > "$RESOURCE_FILE"
+
+echo "[zip] Analysis complete" >&2
+"""
+
+# --------------------------------------------------------------------------- #
 #  Main sandbox runner
 # --------------------------------------------------------------------------- #
 
@@ -371,7 +508,8 @@ echo '{"peak_memory_kb": '"$MEM_USED"', "disk_used_kb": '"$DISK_USED"', "file_co
         if not target_path.is_file():
             console.print(f"\n[bold red]Error:[/] Shell target not found: {target_path}")
             return ""
-        volumes[str(target_path.parent)] = {"bind": "/samples", "mode": "ro"}
+        # Mount only the single file, not the whole parent dir — prevents payload reading sibling files/secrets
+        volumes[str(target_path)] = {"bind": f"/samples/{target_path.name}", "mode": "ro"}
         env_vars["TARGET_FILENAME"] = target_path.name
         sandbox_script = """
 ip link set eth0 down 2>/dev/null || true
@@ -392,6 +530,13 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
             return ""
         volumes[str(exe_path)] = {"bind": "/tmp/target.exe", "mode": "ro"}
         sandbox_script = _EXE_ANALYZE_SCRIPT.replace('INPUT="$1"', 'INPUT="/tmp/target.exe"')
+    elif target_type == "zip-malware":
+        zip_path = Path(target).absolute().resolve()
+        if not zip_path.exists():
+            console.print(f"\n[bold red]Error:[/] ZIP file not found: {zip_path}")
+            return ""
+        volumes[str(zip_path)] = {"bind": "/tmp/target.zip", "mode": "ro"}
+        sandbox_script = _ZIP_MALWARE_ANALYZE_SCRIPT
     else:
         console.print(f"[bold red]Unsupported Type:[/] {target_type}")
         return ""
@@ -505,12 +650,35 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
             if log_size < 50:
                 log_content = log_file_path.read_text(errors="replace").strip()
                 if log_content in ("NO EXECUTABLES FOUND", "WINE64 NOT AVAILABLE",
-                                    "FILE NOT FOUND", "EMPTY FILE", "NO STRACE OUTPUT"):
+                                    "FILE NOT FOUND", "EMPTY FILE", "NO STRACE OUTPUT",
+                                    "NO_PAYLOAD_FOUND"):
                     console.print(f"\n[bold yellow]Warning:[/] {log_content} — {target}")
+                    return ""
+                elif log_content == "ZIP_PASSWORD_UNKNOWN":
+                    console.print(
+                        f"\n[bold red]❌ ZIP Extract Failed:[/] Could not open [bold]{target}[/] "
+                        f"with any known password.\n"
+                        f"[dim]Tried: infected, malware, virus, infected!, password[/]\n"
+                        f"[dim]Supply the password via --env ZIP_PASSWORD=<pass> if known.[/]"
+                    )
                     return ""
                 elif "ERROR" in log_content.upper():
                     console.print(f"\n[bold red]Analysis Error:[/] {log_content}")
                     return ""
+
+            # Escape-attempt detection — check AFTER retrieving log from container.
+            # Container is destroyed in the finally block regardless.
+            log_text = log_file_path.read_text(errors="replace")
+            if "ESCAPE_ATTEMPT_DETECTED" in log_text:
+                console.print(
+                    "\n[bold red on white]⚠ SECURITY ALERT: CONTAINER ESCAPE ATTEMPT DETECTED ⚠[/]\n"
+                    f"[bold red]Target:[/] {target}\n"
+                    "[red]The payload attempted to escape the sandbox (ptrace/namespace/sysrq/capability "
+                    "escalation detected in syscall trace).\n"
+                    "The process was killed and the container is being destroyed.[/]"
+                )
+                # Container already removed in finally block — log the event and return the log
+                # so the ML pipeline can classify the escape attempt itself as malicious evidence.
 
             # If we have resource data, append it to the log as valid JSON
             if resource_data:
