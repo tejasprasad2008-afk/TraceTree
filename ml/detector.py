@@ -391,7 +391,11 @@ def detect_anomaly(
         is_malicious = bool(prediction == 1)
         proba = model.predict_proba(X_target)[0]
         ml_probability = float(proba[1] * 100)
-        ml_confidence = max(proba) * 100
+        # Use P(malicious) as the base for severity adjustment — not max(proba).
+        # max(proba) = the model's clean confidence (64.5%) when it votes NOT malicious,
+        # which was being fed into the severity boost as if it were malicious evidence,
+        # producing absurd scores like 94.5 for a clearly-clean file.
+        ml_confidence = ml_probability
     else:
         # IsolationForest fallback — may need full vector
         X_iso = np.array([target_features])

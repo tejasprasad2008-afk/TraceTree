@@ -24,12 +24,12 @@ export default function MSDosPrompt({
   onExecute,
   onClear
 }: MSDosPromptProps) {
-  const terminalEndRef = useRef<HTMLDivElement>(null);
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll terminal output to the bottom
   useEffect(() => {
-    if (terminalEndRef.current) {
-      terminalEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (terminalContainerRef.current) {
+      terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
     }
   }, [terminalOutput]);
 
@@ -105,7 +105,10 @@ export default function MSDosPrompt({
       </div>
 
       {/* MS-DOS terminal screen */}
-      <div className="bg-black text-[#00FF00] font-mono text-xs p-3 overflow-y-auto h-[250px] border-2 border-t-[#808080] border-l-[#808080] border-b-[#fff] border-r-[#fff] select-text">
+      <div
+        ref={terminalContainerRef}
+        className="bg-black text-[#00FF00] font-mono text-xs p-3 overflow-y-auto h-[250px] border-2 border-t-[#808080] border-l-[#808080] border-b-[#fff] border-r-[#fff] select-text"
+      >
         <div className="flex flex-col gap-1">
           {terminalOutput.map((line, idx) => (
             <div key={idx} className="whitespace-pre-wrap leading-tight font-mono">
@@ -115,7 +118,6 @@ export default function MSDosPrompt({
           {isRunning && (
             <div className="inline-block animate-pulse w-2 h-4 bg-[#00FF00] ml-0.5"></div>
           )}
-          <div ref={terminalEndRef} />
         </div>
       </div>
 

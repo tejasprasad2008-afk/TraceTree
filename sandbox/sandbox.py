@@ -360,7 +360,7 @@ def run_sandbox(target: str, target_type: str = "pip", workspace_root: str = Non
         env_vars["TARGET"] = target
         env_vars["TRACETREE_LOG_PATH"] = str(log_file_path)
         # Map target_type to script — log path injected via env, never formatted into script
-        if target_type == "pip":
+        if target_type in ("pip", "mcp"):
             script = """
 pip download "$TARGET" --dest /tmp/pkg > /dev/null 2>&1
 strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log pip install --no-index --find-links /tmp/pkg "$TARGET" > /dev/null 2>&1
@@ -432,7 +432,7 @@ cp /tmp/strace.log "$TRACETREE_LOG_PATH"
             if k and v is not None:
                 env_vars[k] = str(v)
 
-    if target_type == "pip":
+    if target_type in ("pip", "mcp"):
         sandbox_script = """
 # Honeypot Setup
 mkdir -p ~/.aws
@@ -626,6 +626,31 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
                         out_f.write(raw_data)
 
             os.remove(temp_tar.name)
+
+            # For binary target types, pull extracted files to quarantine BEFORE
+            # container teardown so StaticDisassemblyAnalyzer can reach them.
+            # Only zip-malware supported now; dmg/exe can be added later.
+            if target_type == "zip-malware":
+                try:
+                    quarantine_base = Path.cwd() / ".tracetree" / "quarantine"
+                    quarantine_dir = quarantine_base / log_file_path.stem
+                    quarantine_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    quarantine_base.chmod(0o700)  # restrict base dir: owner-only
+                    q_stream, _ = container.get_archive("/tmp/malware_extracted")
+                    q_tar_tmp = tempfile.NamedTemporaryFile(suffix=".tar", delete=False)
+                    with open(q_tar_tmp.name, "wb") as qf:
+                        for chunk in q_stream:
+                            qf.write(chunk)
+                    with tarfile.open(q_tar_tmp.name) as qtar:
+                        # nosec — extraction confined to quarantine_dir, no symlink follow
+                        qtar.extractall(path=str(quarantine_dir), filter="data")
+                    os.remove(q_tar_tmp.name)
+                    # Write sidecar so perform_analysis() knows where to find the files
+                    sidecar = log_file_path.with_suffix(".qdir")
+                    sidecar.write_text(str(quarantine_dir), encoding="utf-8")
+                    console.print(f"[dim]Retained extracted binary at {quarantine_dir} for static analysis[/]")
+                except Exception as _qe:
+                    log.warning("Quarantine extraction failed (non-fatal): %s", _qe)
 
             # Also try to retrieve resource monitoring data
             resource_data = {}

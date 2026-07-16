@@ -2,112 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer utilities {
-  .rainbow {
-    animation: rainbow 4s linear infinite;
-  }
-  
-  .pulse-glow {
-    animation: pulse-glow 1.5s infinite;
-  }
-  
-  .pulse-glow-yellow {
-    animation: pulse-glow-yellow 1.5s infinite;
-  }
-
-  .pulse-glow-green {
-    animation: pulse-glow-green 1.5s infinite;
-  }
-  
-  .blink {
-    animation: blink 1s step-end infinite;
-  }
-  
-  .bg-90s-tile {
-    background-color: #c0c0c0;
-    background-image:
-      linear-gradient(45deg, #b8b8b8 25%, transparent 25%),
-      linear-gradient(-45deg, #b8b8b8 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, #b8b8b8 75%),
-      linear-gradient(-45deg, transparent 75%, #b8b8b8 75%);
-    background-size: 4px 4px;
-    background-position: 0 0, 0 2px, 2px -2px, -2px 0;
-  }
-  
-  .bg-construction {
-    background: repeating-linear-gradient(45deg, #ffff00, #ffff00 10px, #000000 10px, #000000 20px);
-  }
-  
-  .hr-groove {
-    border-top: 2px solid #808080;
-    border-bottom: 2px solid #ffffff;
-    height: 0px;
-  }
+:root {
+  --bg-app:        #1b1c1e;
+  --bg-panel:      #232427;
+  --bg-panel-alt:  #28292d;
+  --bg-inset:      #161719;
+  --bg-hover:      #2e3034;
+  --bg-selected:   #14324f;
+  --border:        #3a3c40;
+  --border-strong: #4a4d52;
+  --text-primary:  #d6d7d9;
+  --text-muted:    #8b8e94;
+  --text-disabled: #5c5f66;
+  --accent:        #d78a2e;
+  --accent-text:   #1b1c1e;
+  --sev-danger:    #c94f4f;
+  --sev-caution:   #cfa53f;
+  --sev-safe:      #58a05e;
+  --sev-info:      #5187b8;
+  --sev-danger-text:  #e07575;
+  --sev-caution-text: #dcbc6a;
+  --sev-safe-text:    #7dbb82;
+  --font-ui:   -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "Consolas", "Roboto Mono", "Liberation Mono", monospace;
 }
 
-@keyframes rainbow {
-  0% { color: #ff0000; }
-  17% { color: #ff8000; }
-  33% { color: #ffff00; }
-  50% { color: #00ff00; }
-  67% { color: #0000ff; }
-  83% { color: #8000ff; }
-  100% { color: #ff0000; }
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
-@keyframes pulse-glow {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 10px 4px rgba(255, 0, 0, 0.5);
-  }
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
 }
 
-@keyframes pulse-glow-yellow {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(255, 255, 0, 0.7);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 10px 4px rgba(255, 255, 0, 0.5);
-  }
-}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-app); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-disabled); }
+::selection { background: var(--bg-selected); color: var(--text-primary); }
 
-@keyframes pulse-glow-green {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(0, 255, 0, 0.7);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 10px 4px rgba(0, 255, 0, 0.5);
-  }
+@keyframes watcher-blink {
+  0%, 49%  { opacity: 1; }
+  50%, 100% { opacity: 0.4; }
 }
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rainbow {
-    animation: none;
-    color: #ff0000;
-  }
-  .pulse-glow {
-    animation: none;
-  }
-  .pulse-glow-yellow {
-    animation: none;
-  }
-  .pulse-glow-green {
-    animation: none;
-  }
-  .blink {
-    animation: none;
-  }
+.watcher-dot-active {
+  animation: watcher-blink 1.5s steps(2, end) infinite;
 }
