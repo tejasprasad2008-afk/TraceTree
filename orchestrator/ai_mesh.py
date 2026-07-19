@@ -870,6 +870,18 @@ def build_behavior_receipt(
     risk_score = float(getattr(verdict, "risk_score", 0.0))
     reasons = list(getattr(verdict, "reasons", []))
     reason_str = reasons[0] if reasons else ("suspicious behavior flagged" if is_malicious else "no suspicious footprints flagged")
+
+    # Malicious/suspicious/clean tri-state: is_malicious alone only tells us the
+    # binary RF+severity verdict flipped, not how confident that flip is. Above
+    # MALICIOUS_RISK_THRESHOLD we surface "malicious" instead of downgrading
+    # high-confidence detections to "suspicious" (caution/yellow in the UI).
+    MALICIOUS_RISK_THRESHOLD = 75.0
+    if is_malicious and risk_score >= MALICIOUS_RISK_THRESHOLD:
+        decision = "malicious"
+    elif is_malicious:
+        decision = "suspicious"
+    else:
+        decision = "clean"
     
     # 6. Build final schema
     net_policy = "controlled-network-sinkhole" if controlled_network else "blocked-after-fetch"
@@ -904,7 +916,7 @@ def build_behavior_receipt(
             "matched_temporal_patterns": matched_temps
         },
         "verdict": {
-            "decision": "suspicious" if is_malicious else "clean",
+            "decision": decision,
             "confidence": round(risk_score / 100.0, 3),
             "reason": reason_str,
             "review_required": is_malicious or len(matched_sigs) > 0 or risk_score >= 50.0
