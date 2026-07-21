@@ -152,13 +152,9 @@ export default function WorkbenchShell() {
     if (typeof window !== "undefined") localStorage.setItem("tracetree_api_key", k);
   };
 
-  if (setupState === "loading") return null;
-  if (setupState === "needed") {
-    return <FirstRunSetup apiKey={apiKey} onComplete={() => setSetupState("done")} />;
-  }
-
   // WebSocket — mirrors old page.tsx logic
   useEffect(() => {
+    if (setupState !== "done") return;
     let socketTimeout: ReturnType<typeof setTimeout>;
 
     const connect = () => {
@@ -248,7 +244,7 @@ export default function WorkbenchShell() {
       clearTimeout(socketTimeout);
       wsRef.current?.close();
     };
-  }, []);
+  }, [setupState]);
 
   const refreshHistory = async () => {
     try {
@@ -277,6 +273,7 @@ export default function WorkbenchShell() {
 
   // Poll API health
   useEffect(() => {
+    if (setupState !== "done") return;
     const poll = async () => {
       try {
         const r = await fetch("http://127.0.0.1:8000/");
@@ -289,13 +286,14 @@ export default function WorkbenchShell() {
     refreshHistory();
     const t = setInterval(poll, 30000);
     return () => clearInterval(t);
-  }, [apiKey]);
+  }, [apiKey, setupState]);
 
   // Uptime ticker
   useEffect(() => {
+    if (setupState !== "done") return;
     const t = setInterval(() => setStats((p) => ({ ...p, uptime_seconds: p.uptime_seconds + 1 })), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [setupState]);
 
   const recentScans: ScanRow[] = scanData.scan_history.slice(0, 20).map((r) => ({
     ...r,
@@ -318,6 +316,11 @@ export default function WorkbenchShell() {
         return <Settings apiKey={apiKey} onApiKeyChange={handleApiKeyChange} />;
     }
   };
+
+  if (setupState === "loading") return null;
+  if (setupState === "needed") {
+    return <FirstRunSetup apiKey={apiKey} onComplete={() => setSetupState("done")} />;
+  }
 
   return (
     <div
