@@ -2,16 +2,42 @@ import os
 import time
 import tarfile
 import tempfile
+import logging
+import shutil
 from pathlib import Path
 from rich.console import Console
 import subprocess
 
 console = Console()
+log = logging.getLogger(__name__)
 
 try:
     import docker
 except ImportError:
     docker = None
+
+
+def _extract_tar_safely(tar: tarfile.TarFile, destination: Path) -> None:
+    """Extract regular files only, safely on Python 3.9 through current Python."""
+    root = destination.resolve()
+    for member in tar.getmembers():
+        target = (root / member.name).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError(f"unsafe archive member path: {member.name}")
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True, mode=0o700)
+            continue
+        # Deliberately reject symlinks, hard links, devices, and FIFOs from
+        # untrusted archives. Static analysis only needs ordinary files.
+        if not member.isfile():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        source = tar.extractfile(member)
+        if source is None:
+            continue
+        with source, open(target, "wb") as output:
+            shutil.copyfileobj(source, output)
+        target.chmod(0o600)
 
 # --------------------------------------------------------------------------- #
 #  DMG extraction & analysis script (runs inside the container)
@@ -642,8 +668,7 @@ strace -f -t -e trace=all -yy -s 1000 -o /tmp/strace.log bash "/samples/$TARGET_
                         for chunk in q_stream:
                             qf.write(chunk)
                     with tarfile.open(q_tar_tmp.name) as qtar:
-                        # nosec — extraction confined to quarantine_dir, no symlink follow
-                        qtar.extractall(path=str(quarantine_dir), filter="data")
+                        _extract_tar_safely(qtar, quarantine_dir)
                     os.remove(q_tar_tmp.name)
                     # Write sidecar so perform_analysis() knows where to find the files
                     sidecar = log_file_path.with_suffix(".qdir")
