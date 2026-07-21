@@ -2253,7 +2253,7 @@ def launch_dashboard(check_only: bool = False, force_setup: bool = False):
                 env["LLM_PROVIDER"] = "mock"
             elif configured_provider is None:
                 console.print("[dim]No cloud LLM is configured. Starting the Workbench in local mock mode; complete setup when the browser opens.[/]")
-            elif configured_provider not in ("mock", "ollama"):
+            elif configured_provider not in _LLM_SETUP_PRESETS and configured_provider not in ("mock", "ollama"):
                 console.print(Panel(
                     f"[yellow]Unknown LLM_PROVIDER value: {configured_provider}.[/]\n\nStarting in local mock mode. Choose OpenAI, Anthropic, OpenRouter, or Ollama in setup.",
                     title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
