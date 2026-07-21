@@ -175,7 +175,22 @@ Every `connect` syscall is classified into one of four categories:
 ```bash
 git clone --depth 1 https://github.com/tejasprasad2008-afk/TraceTree.git
 cd TraceTree
-pip install -e .
+./bootstrap.sh
+```
+
+`bootstrap.sh` creates `.venv`, makes sure pip is available inside it, upgrades
+the packaging tools, and installs TraceTree in editable mode. This avoids an
+older pip fallback that can fail on Python installations whose new virtual
+environment does not yet include pip.
+
+To install manually instead:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m ensurepip --upgrade
+.venv/bin/python -m pip install --upgrade pip setuptools wheel
+.venv/bin/python -m pip install -e .
+source .venv/bin/activate
 ```
 
 ### Run an Analysis
@@ -398,4 +413,3 @@ Pull requests are welcome. Please keep new features decoupled from existing modu
 ## License
 
 MIT
-
