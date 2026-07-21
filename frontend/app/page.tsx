@@ -10,6 +10,7 @@ import { ScanHistory } from "../components/workbench/screens/ScanHistory";
 import { Evidence, SyscallEvent } from "../components/workbench/screens/Evidence";
 import { Signatures } from "../components/workbench/screens/Signatures";
 import { Settings } from "../components/workbench/screens/Settings";
+import { FirstRunSetup } from "../components/workbench/FirstRunSetup";
 
 type Screen = "dashboard" | "live-monitor" | "scan-history" | "evidence" | "signatures" | "settings";
 
@@ -100,6 +101,7 @@ export default function WorkbenchShell() {
   const [searchQuery, setSearchQuery] = useState("");
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [apiKey, setApiKey] = useState("dev-key");
+  const [setupState, setSetupState] = useState<"loading" | "needed" | "done">("loading");
   const sessionStartRef = useRef<string | null>(null);
 
   const [stats, setStats] = useState<AppStats>({
@@ -132,6 +134,8 @@ export default function WorkbenchShell() {
     if (typeof window !== "undefined") {
       const k = localStorage.getItem("tracetree_api_key");
       if (k) setApiKey(k);
+      const forceSetup = new URLSearchParams(window.location.search).get("setup") === "1";
+      setSetupState(forceSetup || !localStorage.getItem("tracetree_setup_complete") ? "needed" : "done");
     }
   }, []);
 
@@ -147,6 +151,11 @@ export default function WorkbenchShell() {
     setApiKey(k);
     if (typeof window !== "undefined") localStorage.setItem("tracetree_api_key", k);
   };
+
+  if (setupState === "loading") return null;
+  if (setupState === "needed") {
+    return <FirstRunSetup apiKey={apiKey} onComplete={() => setSetupState("done")} />;
+  }
 
   // WebSocket — mirrors old page.tsx logic
   useEffect(() => {

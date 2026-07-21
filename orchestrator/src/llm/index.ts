@@ -5,17 +5,19 @@ export class ClaudeProvider implements LLMProvider {
   name = 'claude';
   private apiKey: string;
   private model: string;
+  private baseUrl: string;
 
-  constructor(apiKey: string, model: string = 'claude-3-5-sonnet-20240620') {
+  constructor(apiKey: string, model: string = 'claude-3-5-sonnet-20240620', baseUrl: string = 'https://api.anthropic.com') {
     this.apiKey = apiKey;
     this.model = model;
+    this.baseUrl = baseUrl.replace(/\/$/, '');
   }
 
   async generateCompletion(messages: LLMMessage[], options?: LLMOptions): Promise<LLMResponse> {
     const systemMessage = messages.find(m => m.role === 'system')?.content;
     const userMessages = messages.filter(m => m.role !== 'system');
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -90,6 +92,51 @@ export class OpenRouterProvider implements LLMProvider {
         promptTokens: data.usage.prompt_tokens,
         completionTokens: data.usage.completion_tokens
       }
+    };
+  }
+}
+
+/** OpenAI-compatible provider for users who bring an OpenAI API key. */
+export class OpenAIProvider implements LLMProvider {
+  name = 'openai';
+  private apiKey: string;
+  private model: string;
+  private baseUrl: string;
+
+  constructor(apiKey: string, model: string, baseUrl: string = 'https://api.openai.com/v1') {
+    this.apiKey = apiKey;
+    this.model = model;
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+  }
+
+  async generateCompletion(messages: LLMMessage[], options?: LLMOptions): Promise<LLMResponse> {
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        max_tokens: options?.maxTokens || 4096,
+        temperature: options?.temperature ?? 0.0,
+        response_format: options?.responseFormat === 'json' ? { type: 'json_object' } : undefined,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices[0].message.content,
+      usage: {
+        promptTokens: data.usage?.prompt_tokens || 0,
+        completionTokens: data.usage?.completion_tokens || 0,
+      },
     };
   }
 }
@@ -184,17 +231,36 @@ export class MockProvider implements LLMProvider {
  * Provider Factory
  */
 export function createLLMProvider(): LLMProvider {
-  const provider = process.env.LLM_PROVIDER || 'claude';
+  // A fresh clone should be able to start the Workbench without a paid-provider
+  // key. The setup screen can persist a provider later; mock mode keeps local
+  // dashboard telemetry available until then.
+  const provider = process.env.LLM_PROVIDER || 'mock';
   
   logger.info('llm', `Initializing provider: ${provider}`);
 
   switch (provider) {
+    case 'openai':
+      if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is required for the OpenAI provider. Run `cascade-analyze setup` or open the Workbench setup screen.');
+      if (!process.env.OPENAI_MODEL) throw new Error('OPENAI_MODEL is required for the OpenAI provider. Run `cascade-analyze setup` or open the Workbench setup screen.');
+      return new OpenAIProvider(
+        process.env.OPENAI_API_KEY,
+        process.env.OPENAI_MODEL,
+        process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+      );
     case 'claude':
-      if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is required for Claude provider');
-      return new ClaudeProvider(process.env.ANTHROPIC_API_KEY);
+      if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is required for the Anthropic provider. Run `cascade-analyze setup` or open the Workbench setup screen.');
+      return new ClaudeProvider(
+        process.env.ANTHROPIC_API_KEY,
+        process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20240620',
+        process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
+      );
     case 'openrouter':
-      if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is required for OpenRouter provider');
-      return new OpenRouterProvider(process.env.OPENROUTER_API_KEY);
+      if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is required for the OpenRouter provider. Run `cascade-analyze setup` or open the Workbench setup screen.');
+      return new OpenRouterProvider(
+        process.env.OPENROUTER_API_KEY,
+        process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
+        process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+      );
     case 'ollama':
       return new OllamaProvider(
         process.env.OLLAMA_BASE_URL || 'http://localhost:11434',

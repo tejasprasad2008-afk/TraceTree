@@ -1,6 +1,9 @@
 import os
 import sys
 import socket
+import shutil
+import subprocess
+import re
 from pathlib import Path
 
 # Add project root directory to sys.path so modules like orchestrator are always importable
@@ -1960,7 +1963,145 @@ def _uninstall_hook_cmd(
     uninstall_hook_cmd(yes=yes)
 
 
-def launch_dashboard():
+_LLM_SETUP_PRESETS = {
+    "openai": {
+        "label": "OpenAI",
+        "key": "OPENAI_API_KEY",
+        "base": "OPENAI_BASE_URL",
+        "model": "OPENAI_MODEL",
+        "base_url": "https://api.openai.com/v1",
+    },
+    "claude": {
+        "label": "Anthropic",
+        "key": "ANTHROPIC_API_KEY",
+        "base": "ANTHROPIC_BASE_URL",
+        "model": "ANTHROPIC_MODEL",
+        "base_url": "https://api.anthropic.com",
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "key": "OPENROUTER_API_KEY",
+        "base": "OPENROUTER_BASE_URL",
+        "model": "OPENROUTER_MODEL",
+        "base_url": "https://openrouter.ai/api/v1",
+    },
+}
+
+
+def _ensure_node_workspace(npm_path: str, workspace: Path, binary: str, label: str, install_dependencies: bool) -> bool:
+    if (workspace / "node_modules" / ".bin" / binary).exists():
+        return True
+    if not install_dependencies:
+        console.print(f"[bold red]✖ {label} dependencies are missing.[/] Run [bold]npm install[/] in [cyan]{workspace.name}/[/] or run [bold]cascade-analyze dashboard[/] to install them automatically.")
+        return False
+    console.print(f"[cyan]Installing {label} dependencies (first run only)...[/]")
+    command = [npm_path, "ci"] if (workspace / "package-lock.json").exists() else [npm_path, "install"]
+    result = subprocess.run(command, cwd=str(workspace))
+    if result.returncode != 0 or not (workspace / "node_modules" / ".bin" / binary).exists():
+        console.print(Panel(
+            f"TraceTree could not install {label} dependencies.\n\nRun [bold]cd {workspace.name} && npm install[/] and retry.",
+            title="[bold red]Dashboard setup failed[/]", border_style="red", expand=False,
+        ))
+        return False
+    return True
+
+
+def _ensure_orchestrator_native_modules(npm_path: str, node_path: str, workspace: Path, install_dependencies: bool) -> bool:
+    """Make sure better-sqlite3 was built for the active Node.js ABI."""
+    check = subprocess.run(
+        [node_path, "-e", "require('better-sqlite3')"],
+        cwd=str(workspace),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if check.returncode == 0:
+        return True
+    if not install_dependencies:
+        console.print(
+            "[bold red]✖ The orchestrator native dependency was built for a different Node.js version.[/] "
+            "Run [bold]npm rebuild better-sqlite3[/] in [cyan]orchestrator/[/], or run [bold]cascade-analyze dashboard[/] to repair it automatically."
+        )
+        return False
+    console.print("[cyan]Rebuilding the orchestrator native dependency for this Node.js version...[/]")
+    rebuild = subprocess.run([npm_path, "rebuild", "better-sqlite3"], cwd=str(workspace))
+    if rebuild.returncode == 0:
+        check = subprocess.run(
+            [node_path, "-e", "require('better-sqlite3')"],
+            cwd=str(workspace),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    if rebuild.returncode != 0 or check.returncode != 0:
+        console.print(Panel(
+            "TraceTree could not rebuild the orchestrator database module for this Node.js version.\n\n"
+            "Run [bold]cd orchestrator && npm install[/], then retry [bold]cascade-analyze dashboard[/].",
+            title="[bold red]Orchestrator dependency mismatch[/]", border_style="red", expand=False,
+        ))
+        return False
+    return True
+
+
+def _dashboard_preflight(project_root: Path, install_dependencies: bool) -> bool:
+    npm_path = shutil.which("npm")
+    node_path = shutil.which("node")
+    if not npm_path or not node_path:
+        console.print(Panel(
+            "TraceTree Workbench requires Node.js 18 or newer and npm. Install Node.js, then run [bold]cascade-analyze dashboard[/] again.",
+            title="[bold red]Node.js required[/]", border_style="red", expand=False,
+        ))
+        return False
+    version = subprocess.run([node_path, "--version"], capture_output=True, text=True)
+    match = re.search(r"v(\d+)", version.stdout)
+    if version.returncode != 0 or not match or int(match.group(1)) < 18:
+        console.print(Panel(
+            f"Found Node.js {version.stdout.strip() or 'unknown'}. TraceTree Workbench requires Node.js 18 or newer.",
+            title="[bold red]Unsupported Node.js version[/]", border_style="red", expand=False,
+        ))
+        return False
+    frontend_ok = _ensure_node_workspace(npm_path, project_root / "frontend", "next", "frontend", install_dependencies)
+    orchestrator_ok = _ensure_node_workspace(npm_path, project_root / "orchestrator", "tsx", "orchestrator", install_dependencies)
+    native_ok = orchestrator_ok and _ensure_orchestrator_native_modules(
+        npm_path, node_path, project_root / "orchestrator", install_dependencies
+    )
+    if not (frontend_ok and orchestrator_ok and native_ok):
+        return False
+    docker_ok = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 if shutil.which("docker") else False
+    if not docker_ok:
+        console.print("[yellow]⚠ Docker is not available. The dashboard can open, but sandbox scans will not run until Docker is started.[/]")
+    return True
+
+
+def _llm_setup_status(project_root: Path) -> Tuple[Optional[str], bool]:
+    """Return configured provider and whether its required local values exist.
+
+    Values are intentionally never logged: this only checks whether the expected
+    names are present in the ignored root .env file.
+    """
+    env_path = project_root / ".env"
+    values: Dict[str, str] = {}
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                key, value = line.split("=", 1)
+                values[key.strip()] = value.strip()
+    provider = (os.getenv("LLM_PROVIDER") or values.get("LLM_PROVIDER", "")).lower() or None
+    if provider not in _LLM_SETUP_PRESETS:
+        return provider, provider in ("mock", "ollama")
+    preset = _LLM_SETUP_PRESETS[provider]
+    return provider, bool(
+        (os.getenv(preset["key"]) or values.get(preset["key"]))
+        and (os.getenv(preset["model"]) or values.get(preset["model"]))
+        and (os.getenv(preset["base"]) or values.get(preset["base"]))
+    )
+
+
+@app.command(name="setup")
+def setup_cmd():
+    """Launch the guided browser setup for a first-time user."""
+    launch_dashboard(force_setup=True)
+
+
+def launch_dashboard(check_only: bool = False, force_setup: bool = False):
     """
     Orchestrate and run both the API backend and the Frontend Next.js client concurrently.
     """
@@ -1972,17 +2113,11 @@ def launch_dashboard():
     project_root = Path(__file__).resolve().parent
     frontend_dir = project_root / "frontend"
     
-    # Pre-check npm
-    if shutil.which("npm") is None:
-        console.print(Panel(
-            "[bold red]Node.js / npm not found in PATH.[/]\n\n"
-            "TraceTree GUI Mode requires Node.js (>= 18) to be installed.\n"
-            "Please download it from [blue]https://nodejs.org[/] and try again.",
-            title="[bold red]Launch Error[/]",
-            border_style="red",
-            expand=False
-        ))
+    if not _dashboard_preflight(project_root, install_dependencies=not check_only):
         raise typer.Exit(1)
+    if check_only:
+        console.print("[green]✔ Dashboard preflight passed. Run [bold]cascade-analyze dashboard[/] to launch it.[/]")
+        return
 
     console.print("[cyan]Starting TraceTree Services...[/]\n")
     
@@ -2088,22 +2223,32 @@ def launch_dashboard():
             bufsize=1
         )
         
-        # Start Orchestrator server — ensure tsx is available first
+        # Start Orchestrator server. Dependencies were validated before any
+        # process was launched, so a fresh clone fails clearly instead of
+        # taking the whole dashboard down mid-boot.
         orchestrator_dir = project_root / "orchestrator"
         npm_path = shutil.which("npm") or "npm"
-        npx_path = shutil.which("npx") or "npx"
-        tsx_path = shutil.which("tsx") or str(orchestrator_dir / "node_modules" / ".bin" / "tsx")
-        if not Path(tsx_path).exists():
-            console.print("[dim]Installing tsx for orchestrator...[/]")
-            subprocess.run(
-                [npm_path, "install", "--prefix", str(orchestrator_dir)],
-                cwd=str(orchestrator_dir),
-                capture_output=True,
-            )
-            tsx_path = str(orchestrator_dir / "node_modules" / ".bin" / "tsx")
-        orch_cmd = [tsx_path, "src/server.ts"] if Path(tsx_path).exists() else [npx_path, "tsx", "src/server.ts"]
+        tsx_path = str(orchestrator_dir / "node_modules" / ".bin" / "tsx")
+        orch_cmd = [tsx_path, "src/server.ts"]
         orch_env = os.environ.copy()
         orch_env["PYTHON_PATH"] = python_exe
+        orch_env["DOTENV_CONFIG_PATH"] = str(project_root / ".env")
+        configured_provider, provider_ready = _llm_setup_status(project_root)
+        if configured_provider in _LLM_SETUP_PRESETS and not provider_ready:
+            console.print(Panel(
+                f"[yellow]{_LLM_SETUP_PRESETS[configured_provider]['label']} is selected but its local key, base URL, or model is incomplete.[/]\n\n"
+                "Starting the Workbench in local mock mode so the setup screen remains available. Complete the browser setup or run [bold]cascade-analyze setup[/], then restart the dashboard.",
+                title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
+            ))
+            orch_env["LLM_PROVIDER"] = "mock"
+        elif configured_provider is None:
+            console.print("[dim]No cloud LLM is configured. Starting the Workbench in local mock mode; complete setup when the browser opens.[/]")
+        elif configured_provider not in ("mock", "ollama"):
+            console.print(Panel(
+                f"[yellow]Unknown LLM_PROVIDER value: {configured_provider}.[/]\n\nStarting in local mock mode. Choose OpenAI, Anthropic, or OpenRouter in setup, then restart the dashboard.",
+                title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
+            ))
+            orch_env["LLM_PROVIDER"] = "mock"
         orch_proc = subprocess.Popen(
             orch_cmd,
             env=orch_env,
@@ -2143,8 +2288,19 @@ def launch_dashboard():
     # Wait for a brief moment to let servers initialize
     time.sleep(3)
     
+    # Do not advertise a URL when a child service already exited. The relevant
+    # process output has been streamed above; this adds an actionable summary.
+    stopped = [name for proc, name in [(api_proc, "API Engine"), (frontend_proc, "Frontend Client"), (orch_proc, "Orchestrator")] if proc.poll() is not None]
+    if stopped:
+        console.print(Panel(
+            f"{' and '.join(stopped)} stopped during startup.\n\nRun [bold]cascade-analyze dashboard --check[/] for dependency diagnostics. If this is a provider configuration issue, run [bold]cascade-analyze setup[/] or complete the browser setup screen after starting in local mock mode.",
+            title="[bold red]Dashboard did not start[/]", border_style="red", expand=False,
+        ))
+        cleanup()
+        return
+
     # Print the beautiful URL Panel
-    url = f"http://localhost:{frontend_port}"
+    url = f"http://localhost:{frontend_port}{'?setup=1' if force_setup else ''}"
     orch_url = "http://localhost:3000"
     api_url = f"http://127.0.0.1:{api_port}"
     
@@ -2224,9 +2380,9 @@ def launch_dashboard():
 
 
 @app.command(name="dashboard")
-def dashboard_cmd():
+def dashboard_cmd(check: bool = typer.Option(False, "--check", help="Validate Node, frontend, orchestrator, and Docker prerequisites without starting services.")):
     """Launch the TraceTree local web dashboard."""
-    launch_dashboard()
+    launch_dashboard(check_only=check)
 
 
 dashboard_cli = typer.Typer(
@@ -2235,9 +2391,9 @@ dashboard_cli = typer.Typer(
 )
 
 @dashboard_cli.command()
-def _dashboard_cmd():
+def _dashboard_cmd(check: bool = typer.Option(False, "--check", help="Validate prerequisites without starting services.")):
     """Launch the TraceTree local web dashboard."""
-    launch_dashboard()
+    launch_dashboard(check_only=check)
 
 
 # ------------------------------------------------------------------ #

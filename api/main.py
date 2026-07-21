@@ -13,6 +13,7 @@ import shlex
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 _ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~]|\][^\x07]*\x07)')
 
@@ -95,6 +96,61 @@ class AnalysisResult(BaseModel):
     verdict: Optional[str] = None
     confidence_score: Optional[float] = None
     error: Optional[str] = None
+
+
+class LLMSetupRequest(BaseModel):
+    provider: str
+    api_key: str
+    base_url: str
+    model: str
+
+
+_LLM_SETUP_FIELDS = {
+    "openai": ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"),
+    "claude": ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL"),
+    "openrouter": ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "OPENROUTER_MODEL"),
+}
+
+
+def _update_env_file(path: Path, values: Dict[str, str]) -> None:
+    """Update selected values without echoing secrets or replacing unrelated config."""
+    existing = path.read_text() if path.exists() else ""
+    lines = existing.splitlines()
+    pending = dict(values)
+    output: List[str] = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip() if "=" in line else ""
+        if key in pending:
+            output.append(f"{key}={pending.pop(key)}")
+        else:
+            output.append(line)
+    output.extend(f"{key}={value}" for key, value in pending.items())
+    path.write_text("\n".join(output).rstrip() + "\n")
+
+
+@app.post("/api/setup/llm")
+async def configure_llm(request: LLMSetupRequest, api_key: str = Depends(verify_api_key)):
+    """Persist a local Workbench LLM choice; the dashboard never returns the secret."""
+    provider = request.provider.strip().lower()
+    if provider not in _LLM_SETUP_FIELDS:
+        raise HTTPException(status_code=400, detail="Choose OpenAI, Anthropic, or OpenRouter.")
+    if not request.api_key.strip() or len(request.api_key) > 512:
+        raise HTTPException(status_code=400, detail="Enter a valid API key.")
+    if not request.model.strip() or len(request.model) > 200:
+        raise HTTPException(status_code=400, detail="Enter a model name.")
+    base_url = request.base_url.strip().rstrip("/")
+    if not re.fullmatch(r"https?://[^\\s/]+(?:/[^\\s]*)?", base_url) or len(base_url) > 300:
+        raise HTTPException(status_code=400, detail="Enter a valid HTTP(S) base URL.")
+
+    key_name, base_name, model_name = _LLM_SETUP_FIELDS[provider]
+    project_root = Path(__file__).resolve().parent.parent
+    _update_env_file(project_root / ".env", {
+        "LLM_PROVIDER": provider,
+        key_name: request.api_key.strip(),
+        base_name: base_url,
+        model_name: request.model.strip(),
+    })
+    return {"saved": True, "provider": provider, "restart_required": True}
 
 class GraphNodeData(BaseModel):
     id: str
