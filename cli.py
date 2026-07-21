@@ -2008,8 +2008,12 @@ def _ensure_node_workspace(npm_path: str, workspace: Path, binary: str, label: s
 
 def _ensure_orchestrator_native_modules(npm_path: str, node_path: str, workspace: Path, install_dependencies: bool) -> bool:
     """Make sure better-sqlite3 was built for the active Node.js ABI."""
+    # Requiring better-sqlite3 alone does not necessarily dlopen its native
+    # binding. Constructing an in-memory database does, so this catches ABI
+    # mismatches before the dashboard launches its orchestrator process.
+    probe = "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()"
     check = subprocess.run(
-        [node_path, "-e", "require('better-sqlite3')"],
+        [node_path, "-e", probe],
         cwd=str(workspace),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -2026,7 +2030,7 @@ def _ensure_orchestrator_native_modules(npm_path: str, node_path: str, workspace
     rebuild = subprocess.run([npm_path, "rebuild", "better-sqlite3"], cwd=str(workspace))
     if rebuild.returncode == 0:
         check = subprocess.run(
-            [node_path, "-e", "require('better-sqlite3')"],
+            [node_path, "-e", probe],
             cwd=str(workspace),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
