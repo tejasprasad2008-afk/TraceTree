@@ -197,6 +197,16 @@ async def configure_llm(request: LLMSetupRequest, api_key: str = Depends(verify_
     _update_env_file(project_root / ".env", values)
     return {"saved": True, "provider": provider, "restart_required": True, "model_pulled": model_pulled}
 
+
+@app.post("/api/setup/exit")
+async def exit_setup(api_key: str = Depends(verify_api_key)):
+    """Tell a guided setup launcher to close its temporary local services."""
+    project_root = Path(__file__).resolve().parent.parent
+    state_dir = project_root / ".tracetree"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "setup-exit").touch()
+    return {"saved": True, "exiting": True}
+
 class GraphNodeData(BaseModel):
     id: str
     label: str

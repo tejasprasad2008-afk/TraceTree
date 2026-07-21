@@ -2186,6 +2186,11 @@ def launch_dashboard(check_only: bool = False, force_setup: bool = False):
     import datetime as _dt
     state_dir = project_root / ".tracetree"
     state_dir.mkdir(parents=True, exist_ok=True)
+    setup_exit_marker = state_dir / "setup-exit"
+    if force_setup:
+        setup_exit_marker.unlink(missing_ok=True)
+    setup_env_path = project_root / ".env"
+    setup_env_mtime = setup_env_path.stat().st_mtime_ns if setup_env_path.exists() else None
     session_start_ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
     try:
         with open(state_dir / "state.json", "w") as _sf:
@@ -2230,25 +2235,29 @@ def launch_dashboard(check_only: bool = False, force_setup: bool = False):
         npm_path = shutil.which("npm") or "npm"
         tsx_path = str(orchestrator_dir / "node_modules" / ".bin" / "tsx")
         orch_cmd = [tsx_path, "src/server.ts"]
-        orch_env = os.environ.copy()
-        orch_env["PYTHON_PATH"] = python_exe
-        orch_env["DOTENV_CONFIG_PATH"] = str(project_root / ".env")
-        configured_provider, provider_ready = _llm_setup_status(project_root)
-        if configured_provider in _LLM_SETUP_PRESETS and not provider_ready:
-            console.print(Panel(
-                f"[yellow]{_LLM_SETUP_PRESETS[configured_provider]['label']} is selected but its local key, base URL, or model is incomplete.[/]\n\n"
-                "Starting the Workbench in local mock mode so the setup screen remains available. Complete the browser setup or run [bold]cascade-analyze setup[/], then restart the dashboard.",
-                title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
-            ))
-            orch_env["LLM_PROVIDER"] = "mock"
-        elif configured_provider is None:
-            console.print("[dim]No cloud LLM is configured. Starting the Workbench in local mock mode; complete setup when the browser opens.[/]")
-        elif configured_provider not in ("mock", "ollama"):
-            console.print(Panel(
-                f"[yellow]Unknown LLM_PROVIDER value: {configured_provider}.[/]\n\nStarting in local mock mode. Choose OpenAI, Anthropic, or OpenRouter in setup, then restart the dashboard.",
-                title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
-            ))
-            orch_env["LLM_PROVIDER"] = "mock"
+        def build_orchestrator_env():
+            env = os.environ.copy()
+            env["PYTHON_PATH"] = python_exe
+            env["DOTENV_CONFIG_PATH"] = str(project_root / ".env")
+            configured_provider, provider_ready = _llm_setup_status(project_root)
+            if configured_provider in _LLM_SETUP_PRESETS and not provider_ready:
+                console.print(Panel(
+                    f"[yellow]{_LLM_SETUP_PRESETS[configured_provider]['label']} is selected but its local key, base URL, or model is incomplete.[/]\n\n"
+                    "Starting the Workbench in local mock mode so the setup screen remains available. Complete the browser setup or run [bold]cascade-analyze setup[/].",
+                    title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
+                ))
+                env["LLM_PROVIDER"] = "mock"
+            elif configured_provider is None:
+                console.print("[dim]No cloud LLM is configured. Starting the Workbench in local mock mode; complete setup when the browser opens.[/]")
+            elif configured_provider not in ("mock", "ollama"):
+                console.print(Panel(
+                    f"[yellow]Unknown LLM_PROVIDER value: {configured_provider}.[/]\n\nStarting in local mock mode. Choose OpenAI, Anthropic, OpenRouter, or Ollama in setup.",
+                    title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
+                ))
+                env["LLM_PROVIDER"] = "mock"
+            return env
+
+        orch_env = build_orchestrator_env()
         orch_proc = subprocess.Popen(
             orch_cmd,
             env=orch_env,
@@ -2376,6 +2385,31 @@ def launch_dashboard(check_only: bool = False, force_setup: bool = False):
             if orch_proc.poll() is not None:
                 console.print("[bold red]❌ Orchestrator stopped unexpectedly.[/]")
                 break
+            if force_setup and setup_exit_marker.exists():
+                console.print("[green]Setup saved. Closing temporary setup services.[/]")
+                break
+            if force_setup:
+                current_mtime = setup_env_path.stat().st_mtime_ns if setup_env_path.exists() else None
+                if current_mtime != setup_env_mtime:
+                    setup_env_mtime = current_mtime
+                    console.print("[cyan]Configuration saved — reloading the AI provider…[/]")
+                    orch_proc.send_signal(signal.SIGINT)
+                    try:
+                        orch_proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        orch_proc.kill()
+                    orch_proc = subprocess.Popen(
+                        orch_cmd,
+                        env=build_orchestrator_env(),
+                        cwd=str(orchestrator_dir),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                    )
+                    reload_thread = threading.Thread(target=stream_output, args=(orch_proc.stdout, "Orchestrator", "#00FFFF"), daemon=True)
+                    reload_thread.start()
+                    threads.append(reload_thread)
             time.sleep(1)
     except KeyboardInterrupt:
         pass
