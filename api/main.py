@@ -579,7 +579,7 @@ async def get_scans(
 
 class DisassemblyRequest(BaseModel):
     file_path: str
-    offset: int | None = None
+    offset: Optional[int] = None
     max_insns: int = 32
 
 
