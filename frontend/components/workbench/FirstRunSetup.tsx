@@ -56,6 +56,7 @@ export function FirstRunSetup({ apiKey, onComplete }: FirstRunSetupProps) {
   const [model, setModel] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [ollamaReady, setOllamaReady] = useState(false);
 
   const selected = PROVIDERS.find((item) => item.id === provider)!;
   const apiBase = process.env.NEXT_PUBLIC_TRACETREE_API_URL || "http://127.0.0.1:8000";
@@ -77,6 +78,7 @@ export function FirstRunSetup({ apiKey, onComplete }: FirstRunSetupProps) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "TraceTree could not save this configuration.");
       localStorage.setItem("tracetree_setup_complete", "configured");
+      setOllamaReady(provider === "ollama" && data.model_warmed === true);
       setStep(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save setup.");
@@ -114,7 +116,7 @@ export function FirstRunSetup({ apiKey, onComplete }: FirstRunSetupProps) {
         {step === 1 && <><p style={{ color: "var(--text-muted)", marginTop: 0 }}>Your key is saved only to this machine&apos;s ignored <code>.env</code> file. It is never displayed again.</p><label style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>{selected.keyLabel}</label><input autoFocus type="password" value={apiToken} onChange={(event) => setApiToken(event.target.value)} placeholder="Paste your API key" style={inputStyle} /></>}
         {step === 2 && <><p style={{ color: "var(--text-muted)", marginTop: 0 }}>{provider === "ollama" ? "Ollama must be running locally. The default is prefilled; you can use another local endpoint if needed." : "The official default is prefilled. Press Continue to accept it, or paste a compatible endpoint."}</p><label style={labelStyle}>Base URL</label><input autoFocus value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} style={inputStyle} /></>}
         {step === 3 && <><p style={{ color: "var(--text-muted)", marginTop: 0 }}>{provider === "ollama" ? "TraceTree will check Ollama and download this model when it is not installed yet. The first download can take a few minutes." : "Enter the exact model identifier available to your account. TraceTree does not silently choose a different model."}</p><label style={labelStyle}>Model name</label><input autoFocus value={model} onChange={(event) => setModel(event.target.value)} placeholder={selected.modelHint} style={inputStyle} /></>}
-        {step === 4 && <div style={{ padding: "14px 0" }}><div style={{ color: "var(--sev-safe)", fontSize: 18, fontWeight: 700 }}>Configuration saved locally.</div><p style={{ color: "var(--text-muted)", maxWidth: 520 }}>Open Dashboard to continue immediately. TraceTree reloads the orchestrator with your selected provider in the background.</p></div>}
+        {step === 4 && <div style={{ padding: "14px 0" }}><div style={{ color: "var(--sev-safe)", fontSize: 18, fontWeight: 700, display: "flex", alignItems: "center", gap: 9 }}>{ollamaReady && <span aria-label="Ollama connected and model ready" title="Ollama connected and model ready" style={{ width: 20, height: 20, borderRadius: "50%", display: "inline-grid", placeItems: "center", background: "var(--sev-safe)", color: "#101817", fontSize: 13 }}>✓</span>}{ollamaReady ? "Ollama connected and model ready." : "Configuration saved locally."}</div><p style={{ color: "var(--text-muted)", maxWidth: 520 }}>Open Dashboard to continue immediately. TraceTree reloads the orchestrator with your selected provider in the background.</p></div>}
         {error && <div style={{ marginTop: 16, padding: 10, border: "1px solid var(--sev-danger)", color: "var(--sev-danger-text)", background: "#321f21" }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 30 }}>
           {step < 4 ? <button onClick={finishLater} style={secondaryStyle}>Set up later (local mock mode)</button> : <span />}

@@ -133,8 +133,8 @@ def _update_env_file(path: Path, values: Dict[str, str]) -> None:
     path.write_text("\n".join(output).rstrip() + "\n")
 
 
-def _ensure_ollama_model(base_url: str, model: str) -> bool:
-    """Verify the local Ollama daemon and pull a selected model once if needed."""
+def _ensure_ollama_model(base_url: str, model: str) -> Dict[str, bool]:
+    """Verify, optionally pull, and warm a local Ollama model before saving it."""
     parsed = urlparse(base_url)
     if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
         raise HTTPException(status_code=400, detail="For safety, Ollama must use a local loopback URL.")
@@ -149,25 +149,53 @@ def _ensure_ollama_model(base_url: str, model: str) -> bool:
         ) from exc
 
     installed = {item.get("name") for item in payload.get("models", []) if isinstance(item, dict)}
+    model_pulled = False
     if model in installed:
-        return False
+        pass
+    else:
+        request_body = json.dumps({"name": model, "stream": False}).encode("utf-8")
+        try:
+            pull_request = Request(
+                f"{base_url}/api/pull",
+                data=request_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(pull_request, timeout=900) as response:
+                response.read()
+            model_pulled = True
+        except (HTTPError, URLError, TimeoutError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Ollama could not download {model}. Check disk space and the Ollama service, then try again.",
+            ) from exc
 
-    request_body = json.dumps({"name": model, "stream": False}).encode("utf-8")
+    # A one-token response proves the model can actually load, rather than
+    # merely appearing in /api/tags. Keep it warm for the first analysis.
+    warm_body = json.dumps({
+        "model": model,
+        "prompt": "Reply with OK.",
+        "stream": False,
+        "keep_alive": "5m",
+        "options": {"num_predict": 1},
+    }).encode("utf-8")
     try:
-        pull_request = Request(
-            f"{base_url}/api/pull",
-            data=request_body,
+        warm_request = Request(
+            f"{base_url}/api/generate",
+            data=warm_body,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urlopen(pull_request, timeout=900) as response:
-            response.read()
-    except (HTTPError, URLError, TimeoutError) as exc:
+        with urlopen(warm_request, timeout=300) as response:
+            warmed = json.loads(response.read().decode("utf-8"))
+        if not warmed.get("done"):
+            raise ValueError("Ollama did not finish the warm-up request")
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Ollama could not download {model}. Check disk space and the Ollama service, then try again.",
+            detail=f"Ollama found {model} but could not run it. Check the Ollama service and available memory, then try again.",
         ) from exc
-    return True
+    return {"model_pulled": model_pulled, "model_warmed": True}
 
 
 @app.post("/api/setup/llm")
@@ -181,11 +209,11 @@ async def configure_llm(request: LLMSetupRequest, api_key: str = Depends(verify_
     if not request.model.strip() or len(request.model) > 200:
         raise HTTPException(status_code=400, detail="Enter a model name.")
     base_url = request.base_url.strip().rstrip("/")
-    if not re.fullmatch(r"https?://[^\\s/]+(?:/[^\\s]*)?", base_url) or len(base_url) > 300:
+    if not re.fullmatch(r"https?://[^\s/]+(?:/[^\s]*)?", base_url) or len(base_url) > 300:
         raise HTTPException(status_code=400, detail="Enter a valid HTTP(S) base URL.")
 
     key_name, base_name, model_name = _LLM_SETUP_FIELDS[provider]
-    model_pulled = _ensure_ollama_model(base_url, request.model.strip()) if provider == "ollama" else False
+    ollama_status = _ensure_ollama_model(base_url, request.model.strip()) if provider == "ollama" else {"model_pulled": False, "model_warmed": False}
     project_root = Path(__file__).resolve().parent.parent
     values = {
         "LLM_PROVIDER": provider,
@@ -195,7 +223,7 @@ async def configure_llm(request: LLMSetupRequest, api_key: str = Depends(verify_
     if key_name:
         values[key_name] = request.api_key.strip()
     _update_env_file(project_root / ".env", values)
-    return {"saved": True, "provider": provider, "restart_required": True, "model_pulled": model_pulled}
+    return {"saved": True, "provider": provider, "restart_required": True, **ollama_status}
 
 
 @app.post("/api/setup/exit")
