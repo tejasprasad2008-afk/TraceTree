@@ -2261,9 +2261,13 @@ def launch_dashboard(check_only: bool = False, force_setup: bool = False):
         
         # Start Frontend server (Next.js via npm run dev)
         frontend_cmd = [npm_path, "run", "dev", "--", "-p", str(frontend_port)]
+        frontend_env = os.environ.copy()
+        # The API port can advance when 8000 is busy. Pass the actual local
+        # endpoint to the setup wizard instead of making it guess port 8000.
+        frontend_env["NEXT_PUBLIC_TRACETREE_API_URL"] = f"http://127.0.0.1:{api_port}"
         frontend_proc = subprocess.Popen(
             frontend_cmd,
-            env=os.environ,
+            env=frontend_env,
             cwd=str(frontend_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

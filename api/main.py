@@ -7,6 +7,7 @@ import uuid
 import os
 import pty
 import fcntl
+import json
 import re
 import select
 import shlex
@@ -14,6 +15,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 _ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~]|\][^\x07]*\x07)')
 
@@ -100,7 +104,7 @@ class AnalysisResult(BaseModel):
 
 class LLMSetupRequest(BaseModel):
     provider: str
-    api_key: str
+    api_key: str = ""
     base_url: str
     model: str
 
@@ -109,6 +113,7 @@ _LLM_SETUP_FIELDS = {
     "openai": ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"),
     "claude": ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL"),
     "openrouter": ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "OPENROUTER_MODEL"),
+    "ollama": (None, "OLLAMA_BASE_URL", "OLLAMA_MODEL"),
 }
 
 
@@ -128,13 +133,50 @@ def _update_env_file(path: Path, values: Dict[str, str]) -> None:
     path.write_text("\n".join(output).rstrip() + "\n")
 
 
+def _ensure_ollama_model(base_url: str, model: str) -> bool:
+    """Verify the local Ollama daemon and pull a selected model once if needed."""
+    parsed = urlparse(base_url)
+    if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise HTTPException(status_code=400, detail="For safety, Ollama must use a local loopback URL.")
+
+    try:
+        with urlopen(f"{base_url}/api/tags", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ollama is not available at {base_url}. Install and start Ollama, then try again.",
+        ) from exc
+
+    installed = {item.get("name") for item in payload.get("models", []) if isinstance(item, dict)}
+    if model in installed:
+        return False
+
+    request_body = json.dumps({"name": model, "stream": False}).encode("utf-8")
+    try:
+        pull_request = Request(
+            f"{base_url}/api/pull",
+            data=request_body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(pull_request, timeout=900) as response:
+            response.read()
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ollama could not download {model}. Check disk space and the Ollama service, then try again.",
+        ) from exc
+    return True
+
+
 @app.post("/api/setup/llm")
 async def configure_llm(request: LLMSetupRequest, api_key: str = Depends(verify_api_key)):
     """Persist a local Workbench LLM choice; the dashboard never returns the secret."""
     provider = request.provider.strip().lower()
     if provider not in _LLM_SETUP_FIELDS:
-        raise HTTPException(status_code=400, detail="Choose OpenAI, Anthropic, or OpenRouter.")
-    if not request.api_key.strip() or len(request.api_key) > 512:
+        raise HTTPException(status_code=400, detail="Choose OpenAI, Anthropic, OpenRouter, or Ollama.")
+    if provider != "ollama" and (not request.api_key.strip() or len(request.api_key) > 512):
         raise HTTPException(status_code=400, detail="Enter a valid API key.")
     if not request.model.strip() or len(request.model) > 200:
         raise HTTPException(status_code=400, detail="Enter a model name.")
@@ -143,14 +185,17 @@ async def configure_llm(request: LLMSetupRequest, api_key: str = Depends(verify_
         raise HTTPException(status_code=400, detail="Enter a valid HTTP(S) base URL.")
 
     key_name, base_name, model_name = _LLM_SETUP_FIELDS[provider]
+    model_pulled = _ensure_ollama_model(base_url, request.model.strip()) if provider == "ollama" else False
     project_root = Path(__file__).resolve().parent.parent
-    _update_env_file(project_root / ".env", {
+    values = {
         "LLM_PROVIDER": provider,
-        key_name: request.api_key.strip(),
         base_name: base_url,
         model_name: request.model.strip(),
-    })
-    return {"saved": True, "provider": provider, "restart_required": True}
+    }
+    if key_name:
+        values[key_name] = request.api_key.strip()
+    _update_env_file(project_root / ".env", values)
+    return {"saved": True, "provider": provider, "restart_required": True, "model_pulled": model_pulled}
 
 class GraphNodeData(BaseModel):
     id: str
@@ -399,7 +444,6 @@ async def execute_command(request: CommandRequest, api_key: str = Depends(verify
     return StreamingResponse(run_process(), media_type="text/event-stream")
 
 import sqlite3
-import json
 import datetime
 
 ORCHESTRATOR_DB = os.path.join(

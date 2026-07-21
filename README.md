@@ -186,7 +186,7 @@ pip install -e .
 cascade-analyze setup
 ```
 
-On a fresh clone, TraceTree installs the frontend and orchestrator dependencies, then opens the local Workbench. The first-run screen lets you choose **OpenAI**, Anthropic, or OpenRouter; paste an API key; accept or replace the provider base URL; and enter the model identifier you want to use. It saves the selection only to the ignored root `.env` file and asks you to restart the dashboard to load it.
+On a fresh clone, TraceTree installs the frontend and orchestrator dependencies, then opens the local Workbench. The first-run screen lets you choose **OpenAI**, Anthropic, OpenRouter, or **Ollama**; accept or replace the provider base URL; and enter the model identifier you want to use. Cloud providers require an API key. Ollama runs locally without a key, and the wizard checks for the selected model and pulls `qwen2.5-coder:7b` when it is not installed yet. It saves the selection only to the ignored root `.env` file and asks you to restart the dashboard to load it.
 
 No cloud key is required just to explore the Workbench: choose **Set up later** to start in local mock mode. You can return to the provider wizard by clearing the browser's TraceTree site data, or configure it from the terminal:
 
