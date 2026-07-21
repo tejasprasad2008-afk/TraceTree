@@ -2233,8 +2233,12 @@ def launch_dashboard(check_only: bool = False, force_setup: bool = False):
         # taking the whole dashboard down mid-boot.
         orchestrator_dir = project_root / "orchestrator"
         npm_path = shutil.which("npm") or "npm"
+        # Use the same runtime that preflight used to validate better-sqlite3.
+        # Invoking the tsx shim directly re-runs its /usr/bin/env node shebang,
+        # which can select a different nvm/Homebrew Node and break native ABI.
+        node_path = shutil.which("node") or "node"
         tsx_path = str(orchestrator_dir / "node_modules" / ".bin" / "tsx")
-        orch_cmd = [tsx_path, "src/server.ts"]
+        orch_cmd = [node_path, tsx_path, "src/server.ts"]
         def build_orchestrator_env():
             env = os.environ.copy()
             env["PYTHON_PATH"] = python_exe
