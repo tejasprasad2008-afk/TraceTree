@@ -261,6 +261,9 @@ def _check_sequence_condition(
 
     if condition == "non_standard":
         if evt_type == "execve":
+            details = event.get("details", {})
+            if isinstance(details, dict) and details.get("failed"):
+                return False
             return target not in BENIGN_BINARIES
         return False
 

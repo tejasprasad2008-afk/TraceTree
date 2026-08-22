@@ -21,7 +21,10 @@ from typing import List, Dict, Any, Optional
 log = logging.getLogger(__name__)
 
 # Exclusions to speed up scans and avoid false positives
-SCAN_EXCLUDE_EXTENSIONS = {'.md', '.txt', '.svg', '.png', '.jpg'}
+SCAN_EXCLUDE_EXTENSIONS = {'.md', '.txt', '.svg', '.png', '.jpg', '.log'}
+# .log excluded because strace logs are diagnostic artifacts — YARA scanning them
+# causes false positives (e.g. ObfuscatedEval matching exec(compile() from pip's own
+# Python runtime appearing as captured argument strings in the trace).
 SCAN_EXCLUDE_DIRS = {'docs', 'public', 'assets', 'README'}
 
 # --------------------------------------------------------------------------- #
@@ -54,8 +57,8 @@ rule ReverseShellPattern {
     strings:
         $bash = "/bin/bash -i >& /dev/tcp/" nocase
         $nc = "nc -e /bin/" nocase
-        $curl_sh = /curl\s+\S+\|.*(?:bash|sh)/ nocase
-        $wget_sh = /wget\s+\S+\s+-O.*\|.*(?:bash|sh)/ nocase
+        $curl_sh = /curl\s+\S+\|.*(bash|sh)/ nocase
+        $wget_sh = /wget\s+\S+\s+-O.*\|.*(bash|sh)/ nocase
         $python_rs = /python\d?\s+-c.*socket\.socket.*connect/ nocase
     condition:
         any of them
@@ -106,8 +109,8 @@ rule ObfuscatedEval {
         description = "Detects eval/exec of dynamically constructed code"
         severity = "high"
     strings:
-        $eval_b64 = /eval\s*\(\s*(?:base64|decode|b64decode)\s*\(|eval\s*\(\s*zlib\.decompress/ nocase
-        $exec_comp = /exec\s*\(\s*(?:compile|__import__)\s*\(/ nocase
+        $eval_b64 = /eval\s*\(\s*(base64|decode|b64decode)\s*\(|eval\s*\(\s*zlib\.decompress/ nocase
+        $exec_comp = /exec\s*\(\s*(compile|__import__)\s*\(/ nocase
         $chr_exec = /chr\(\d+\)\s*\+\s*chr\(\d+\)/ ascii
     condition:
         any of them
@@ -118,9 +121,9 @@ rule MaliciousPostInstall {
         description = "Detects post-install scripts with suspicious network/exfil behavior (not generic setup.py)"
         severity = "high"
     strings:
-        $net_exfil = /(?:requests\.|urllib|wget|curl|socket\.)\s*(?:get|post|put|send)/ nocase
-        $encode_exfil = /(?:base64|encode|b64encode)\s*\(.*(?:open|read|password|secret|token)/ nocase
-        $c2_pattern = /(?:stratum\+tcp:\/\/|pastebin|transfer\.sh|file\.io|0x0\.st)/ nocase
+        $net_exfil = /(requests\.|urllib|wget|curl|socket\.)\s*(get|post|put|send)/ nocase
+        $encode_exfil = /(base64|encode|b64encode)\s*\(.*(open|read|password|secret|token)/ nocase
+        $c2_pattern = /(stratum\+tcp:\/\/|pastebin|transfer\.sh|file\.io|0x0\.st)/ nocase
     condition:
         2 of them
 }
@@ -149,6 +152,29 @@ rule ContainerEscapeIndicator {
         $unshare = "unshare -m" nocase
     condition:
         any of them
+}
+
+/* TODO: Written 2026-07-15 to unblock LummaStealer PS1-dropper end-to-end
+   verification test. Needs a deliberate pass before relying on it as a
+   real detection rule: false-positive rate unvalidated (BITSTransfer is
+   used by legitimate Windows software), pattern coverage narrow
+   (only covers BITSTransfer+RunKey variant; omits mshta, wscript, regsvr32,
+   certutil, and other common PS1 dropper LOLBins). */
+rule PowerShellDropper {
+    meta:
+        description = "Detects PowerShell download-execute-persist dropper pattern"
+        severity = "critical"
+        mitre = "T1059.001,T1547.001,T1197"
+    strings:
+        $bits = "BITSTransfer" nocase
+        $bits2 = "Start-BitsTransfer" nocase
+        $reg_run = "CurrentVersion\\Run" nocase
+        $appdata_exe = /APPDATA.*\.exe/ nocase
+        $expand_archive = "Expand-Archive" nocase
+        $start_process = "Start-Process" nocase
+    condition:
+        ($bits or $bits2) and $reg_run
+        or ($appdata_exe and $expand_archive and $start_process)
 }
 """
 
@@ -193,15 +219,26 @@ def scan_with_yara(
         try:
             matches = rules.match(str(fpath))
             for m in matches:
+                instances = [
+                    instance
+                    for string_match in m.strings
+                    for instance in string_match.instances
+                ]
                 results.append({
                     "rule_name": m.rule,
                     "severity": m.meta.get("severity", "unknown"),
                     "description": m.meta.get("description", ""),
                     "file_path": str(fpath),
                     "matched_strings": [
-                        instance.matched_data.decode('utf-8', errors='replace')
-                        for string_match in m.strings
-                        for instance in string_match.instances
+                        inst.matched_data.decode('utf-8', errors='replace')
+                        for inst in instances
+                    ],
+                    # Parallel field preserving byte offsets for static analysis.
+                    # matched_strings kept as plain strings for backward compat.
+                    "matched_offsets": [
+                        {"text": inst.matched_data.decode('utf-8', errors='replace'),
+                         "offset": inst.offset}
+                        for inst in instances
                     ],
                 })
         except Exception as e:
@@ -401,6 +438,7 @@ def _fallback_regex_scan(
                     "description": pattern_info["description"],
                     "file_path": str(fpath),
                     "matched_strings": list(set(matched))[:5],  # cap at 5 unique
+                    "matched_offsets": [],  # regex fallback has no byte offsets
                 })
 
     return results
@@ -419,7 +457,9 @@ def _collect_files(
     files: List[Path] = []
 
     if log_path and Path(log_path).exists():
-        files.append(Path(log_path))
+        lp = Path(log_path)
+        if lp.suffix.lower() not in SCAN_EXCLUDE_EXTENSIONS:
+            files.append(lp)
 
     if package_dir and Path(package_dir).is_dir():
         for root, dirs, filenames in os.walk(package_dir):

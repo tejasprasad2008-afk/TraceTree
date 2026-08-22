@@ -136,11 +136,22 @@ fastify.post('/api/telemetry', async (request, reply) => {
       // Persist scan to local SQLite
       try {
         const findings = typeof payload.findings === 'string' ? JSON.parse(payload.findings) : payload.findings;
+        // Mirrors the tri-state decision contract from orchestrator/ai_mesh.py
+        // (build_behavior_receipt): lowercase clean/suspicious/malicious, so
+        // this SQLite-backed history stays consistent with the Python API's
+        // decision->level mapping instead of using its own MALICIOUS/CLEAN words.
+        const rawConfidence = findings.confidence_score ?? 0;
+        const normalizedConfidence = rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence;
+        const decision = !findings.is_malicious
+          ? 'clean'
+          : normalizedConfidence >= 75
+            ? 'malicious'
+            : 'suspicious';
         const scan: ScanRecord = {
           id: nanoid(),
           userId: payload.userId || 'anonymous',
           target: findings.pid || findings.target || payload.target || 'unknown',
-          verdict: findings.is_malicious ? 'MALICIOUS' : 'CLEAN',
+          verdict: decision,
           confidence: findings.confidence_score ?? 0,
           findings: typeof payload.findings === 'string' ? payload.findings : JSON.stringify(payload.findings),
           createdAt: new Date().toISOString(),

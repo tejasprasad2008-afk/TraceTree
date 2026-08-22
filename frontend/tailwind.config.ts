@@ -2,32 +2,44 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: [
-    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/**/*.{js,ts,jsx,tsx,mdx}"
+    "./app/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
   ],
   theme: {
     extend: {
       colors: {
-        win95: {
-          gray: "#C0C0C0",
-          darkGray: "#808080",
-          navy: "#000080",
-          blue: "#0000FF",
-          lightBlue: "#1084D0",
-          green: "#00FF00",
-          red: "#FF0000",
-          yellow: "#FFFF00",
-        }
+        "bg-app":        "var(--bg-app)",
+        "bg-panel":      "var(--bg-panel)",
+        "bg-panel-alt":  "var(--bg-panel-alt)",
+        "bg-inset":      "var(--bg-inset)",
+        "bg-hover":      "var(--bg-hover)",
+        "bg-selected":   "var(--bg-selected)",
+        "border-def":    "var(--border)",
+        "border-strong": "var(--border-strong)",
+        "txt-primary":   "var(--text-primary)",
+        "txt-muted":     "var(--text-muted)",
+        "txt-disabled":  "var(--text-disabled)",
+        "accent":        "var(--accent)",
+        "accent-text":   "var(--accent-text)",
+        "sev-danger":    "var(--sev-danger)",
+        "sev-caution":   "var(--sev-caution)",
+        "sev-safe":      "var(--sev-safe)",
+        "sev-info":      "var(--sev-info)",
       },
       fontFamily: {
-        sans: ["'MS Sans Serif'", "Tahoma", "sans-serif"],
-        heading: ["'Arial Black'", "Impact", "sans-serif"],
-        mono: ["'Courier New'", "monospace"],
-      }
+        ui:   ["var(--font-ui)"],
+        mono: ["var(--font-mono)"],
+      },
+      fontSize: {
+        "2xs":  ["10px", { lineHeight: "1.35", letterSpacing: "0.06em" }],
+        "xs":   ["11px", { lineHeight: "1.35" }],
+        "sm":   ["12px", { lineHeight: "1.35" }],
+        "base": ["13px", { lineHeight: "1.35" }],
+        "lg":   ["15px", { lineHeight: "1.35" }],
+      },
     },
   },
   plugins: [],
 };
+
 export default config;

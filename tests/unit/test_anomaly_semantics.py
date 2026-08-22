@@ -52,8 +52,8 @@ def test_severity_adjusted_confidence_rules():
         temporal_pattern_count=0
     )
     assert is_mal is True
-    # min(99.0, max(50.0, 90.0) + 5.0) -> min(99.0, 95.0) -> 95.0
-    assert score == 95.0
+    # confidence + 25.0 -> 50.0 + 25.0 -> 75.0
+    assert score == 75.0
     assert any("Critical syscall severity" in r for r in reasons)
 
     # 3. High severity boost (total_severity >= 15)

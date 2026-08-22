@@ -2,6 +2,7 @@
 .DS_Store
 .env
 .env.*
+!.env.example
 *.log
 .vscode/
 .idea/
@@ -68,6 +69,12 @@ macapp/.swiftpm/
 # --- Runtime Logs ---
 logs/
 
+# --- TraceTree runtime state (session history, quarantine) ---
+# quarantine/ holds live malware binaries extracted from sandboxed samples.
+# MUST NOT be committed. history/ holds session receipts/analyst reports.
+.tracetree/quarantine/
+.tracetree/history/
+
 # --- Third-party repos cloned into project root ---
 repocheckai/
 
@@ -95,3 +102,4 @@ Temporary Items
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+vulnerable-mcp-servers-lab/

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import { createLLMProvider, ClaudeProvider, OpenRouterProvider, OllamaProvider, MockProvider } from './index.js';
+import { createLLMProvider, ClaudeProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, MockProvider } from './index.js';
 import { logger } from '../utils/index.js';
 
 describe('createLLMProvider', () => {
@@ -23,12 +23,11 @@ describe('createLLMProvider', () => {
     Object.assign(process.env, originalEnv);
   });
 
-  it('should create a ClaudeProvider by default', () => {
-    process.env.ANTHROPIC_API_KEY = 'test-key';
+  it('should create a MockProvider by default so a fresh clone can open the dashboard', () => {
     delete process.env.LLM_PROVIDER;
     const provider = createLLMProvider();
-    expect(provider).toBeInstanceOf(ClaudeProvider);
-    expect(logger.info).toHaveBeenCalledWith('llm', 'Initializing provider: claude');
+    expect(provider).toBeInstanceOf(MockProvider);
+    expect(logger.info).toHaveBeenCalledWith('llm', 'Initializing provider: mock');
   });
 
   it('should create a ClaudeProvider when LLM_PROVIDER is set to claude', () => {
@@ -41,7 +40,22 @@ describe('createLLMProvider', () => {
   it('should throw an error if ANTHROPIC_API_KEY is missing for Claude', () => {
     process.env.LLM_PROVIDER = 'claude';
     delete process.env.ANTHROPIC_API_KEY;
-    expect(() => createLLMProvider()).toThrow('ANTHROPIC_API_KEY is required for Claude provider');
+    expect(() => createLLMProvider()).toThrow('ANTHROPIC_API_KEY is required for the Anthropic provider');
+  });
+
+  it('should create an OpenAIProvider when OpenAI configuration is complete', () => {
+    process.env.LLM_PROVIDER = 'openai';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'test-model';
+    const provider = createLLMProvider();
+    expect(provider).toBeInstanceOf(OpenAIProvider);
+  });
+
+  it('should explain the missing OpenAI model configuration', () => {
+    process.env.LLM_PROVIDER = 'openai';
+    process.env.OPENAI_API_KEY = 'test-key';
+    delete process.env.OPENAI_MODEL;
+    expect(() => createLLMProvider()).toThrow('OPENAI_MODEL is required for the OpenAI provider');
   });
 
   it('should create an OpenRouterProvider when LLM_PROVIDER is set to openrouter', () => {
@@ -55,7 +69,7 @@ describe('createLLMProvider', () => {
   it('should throw an error if OPENROUTER_API_KEY is missing for OpenRouter', () => {
     process.env.LLM_PROVIDER = 'openrouter';
     delete process.env.OPENROUTER_API_KEY;
-    expect(() => createLLMProvider()).toThrow('OPENROUTER_API_KEY is required for OpenRouter provider');
+    expect(() => createLLMProvider()).toThrow('OPENROUTER_API_KEY is required for the OpenRouter provider');
   });
 
   it('should create an OllamaProvider when LLM_PROVIDER is set to ollama', () => {

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TraceTree :: Cascade Analyzer - Security Dashboard",
-  description: "Retro Style Security Telemetry Panel",
+  title: "TraceTree Workbench",
+  description: "Runtime behavioral security scanner",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-90s-tile font-sans text-black min-h-screen">
+      <body style={{ background: "var(--bg-app)", color: "var(--text-primary)" }}>
         {children}
       </body>
     </html>

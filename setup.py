@@ -39,6 +39,7 @@ setup(
             "cascade-scan=cli:scan_app",
             "cascade-install-hook=cli:install_hook_cli",
             "cascade-uninstall-hook=cli:uninstall_hook_cli",
+            "cascade-cve-sync=cli:cve_sync_cli",
         ],
     },
     cmdclass={

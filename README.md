@@ -168,7 +168,8 @@ Every `connect` syscall is classified into one of four categories:
 ### Prerequisites
 
 - Python 3.9+
-- Docker (must be running)
+- Node.js 18+ and npm (required for the Workbench dashboard)
+- Docker (required to run sandbox scans; the dashboard itself can open without it)
 
 ### Install
 
@@ -192,6 +193,23 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 source .venv/bin/activate
 ```
+
+### First-run Workbench setup
+
+```bash
+# Opens the visual, step-by-step first-run wizard in your browser.
+cascade-analyze setup
+```
+
+On a fresh clone, TraceTree installs the frontend and orchestrator dependencies, then opens the local Workbench. The first-run screen lets you choose **OpenAI**, Anthropic, OpenRouter, or **Ollama**; accept or replace the provider base URL; and enter the model identifier you want to use. Cloud providers require an API key. Ollama runs locally without a key, and the wizard checks for the selected model and pulls `qwen2.5-coder:7b` when it is not installed yet. It saves the selection only to the ignored root `.env` file and asks you to restart the dashboard to load it.
+
+No cloud key is required just to explore the Workbench: choose **Set up later** to start in local mock mode. You can return to the provider wizard by clearing the browser's TraceTree site data, or configure it from the terminal:
+
+```bash
+cascade-analyze dashboard
+```
+
+The built-in defaults are `https://api.openai.com/v1`, `https://api.anthropic.com`, and `https://openrouter.ai/api/v1`. Copy [.env.example](.env.example) to `.env` if you prefer to configure manually. Run `cascade-analyze dashboard --check` to validate Node, frontend/orchestrator dependencies, and Docker before launching.
 
 ### Run an Analysis
 

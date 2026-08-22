@@ -2,17 +2,10 @@ import sys
 import json
 import logging
 import traceback
-from pathlib import Path
 from typing import Dict, Any
 from monitor.parser import parse_strace_log
 from monitor.signatures import load_signatures, match_signatures
 from monitor.yara import scan_with_yara
-
-# Import TraceTree low-level utilities
-try:
-except ImportError:
-    # Fallback for local development if not installed
-    sys.path.append(str(Path(__file__).parent))
 
 # Configure logging to stderr (since stdout is used for JSON-RPC)
 logging.basicConfig(

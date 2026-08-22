@@ -28,7 +28,7 @@ rule MCP_UI_HTML_Injection {
         mitre = "T1189"
     strings:
         $html_img_onerror = /<img\s+[^>]*onerror\s*=\s*["'][^"']*["']/ nocase
-        $html_script_tag = /<script[^>]*>[\s\S]*?<\/script>/ nocase
+        $html_script_tag = /<script[^>]*>[\s\S]*<\/script>/ nocase
         $html_iframe_srcdoc = /<iframe[^>]*srcdoc\s*=\s*["']/ nocase
         $fetch_document_cookie = /fetch\s*\(\s*["'][^"']*["'].*document\.cookie/ nocase
     condition:
@@ -44,7 +44,7 @@ rule MCP_UI_Markdown_XSS {
         mitre = "T1059.007"
     strings:
         $md_js_uri = /\[.*\]\s*\(\s*javascript\s*:/ nocase
-        $md_eval_atob = /eval\s*\(\s*atob\s*\(\s*["'][A-Za-z0-9+/=]+["']\s*\)/ nocase
+        $md_eval_atob = /eval\s*\(\s*atob\s*\(\s*["'][A-Za-z0-9+\/=]+["']\s*\)/ nocase
         $md_data_uri = /data\s*:\s*text\/html.*base64/ nocase
     condition:
         any of them
@@ -76,7 +76,7 @@ rule MCP_UI_CSS_Exfiltration {
         $css_import_url = /@import\s+url\s*\(\s*["']https?:\/\// nocase
         $css_attribute_selector = /\[class\s*[\^$*]?=\s*["'][^"']*["']\s*\]/ nocase
     condition:
-        $css_import_url
+        any of them
 }
 
 /* ========================================================================= */
@@ -306,9 +306,9 @@ rule MCP_Cmd_EncodedExecution {
         cve = "CVE-2026-30626"
         mitre = "T1140"
     strings:
-        $base64_decode_exec = /echo\s+[A-Za-z0-9+/=]+\s*\|\s*base64\s+-d\s*\|\s*(bash|sh)/ nocase
+        $base64_decode_exec = /echo\s+[A-Za-z0-9+\/=]+\s*\|\s*base64\s+-d\s*\|\s*(bash|sh)/ nocase
         $eval_base64 = /eval\s*\(\s*base64\s*\.decode\s*\(/ nocase
-        $atob_exec = /atob\s*\(\s*["'][A-Za-z0-9+/=]+["']\s*\)/ nocase
+        $atob_exec = /atob\s*\(\s*["'][A-Za-z0-9+\/=]+["']\s*\)/ nocase
     condition:
         any of them
 }
@@ -357,7 +357,7 @@ rule MCP_Protocol_JSONRPC_Adversarial {
         mitre = "T1059"
     strings:
         $tools_call_injection = /"method"\s*:\s*"tools\/call".*"arguments"\s*:\s*\{[^}]*[;|&$`]/ nocase
-        $malicious_tool_name = /"name"\s*:\s*"[^"]*(?:exec|eval|system|shell|run)[^"]*"/ nocase
+        $malicious_tool_name = /"name"\s*:\s*"[^"]*(exec|eval|system|shell|run)[^"]*"/ nocase
         $jsonrpc_with_payload = /"jsonrpc"\s*:\s*"2\.0".*"payload"\s*:/ nocase
     condition:
         any of them

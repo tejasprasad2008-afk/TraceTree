@@ -1,6 +1,9 @@
 import os
 import sys
 import socket
+import shutil
+import subprocess
+import re
 from pathlib import Path
 
 # Add project root directory to sys.path so modules like orchestrator are always importable
@@ -133,6 +136,8 @@ def check_docker_preflight():
             title="[bold yellow]Preflight Check Failed[/]",
             border_style="red"
         ))
+        sys.stdout.flush()
+        sys.stderr.flush()
         sys.exit(1)
         
     try:
@@ -159,6 +164,8 @@ def check_docker_preflight():
             border_style="red",
             expand=False
         ))
+        sys.stdout.flush()
+        sys.stderr.flush()
         sys.exit(1)
 
 def determine_target_type(target: str) -> str:
@@ -290,12 +297,36 @@ def build_cascade_tree(target: str, target_type: str, graph_json: dict) -> Tree:
         
     return tree
 
+def _purge_stale_quarantine(max_age_days: int = 7) -> None:
+    """Delete quarantine session dirs older than max_age_days.
+
+    Runs silently at CLI startup — quarantine holds live malware binaries and
+    must not accumulate indefinitely. 7-day default suits single-user local use.
+    Users who need longer retention can set TRACETREE_QUARANTINE_TTL_DAYS env var.
+    """
+    import shutil as _shutil
+    import time as _time
+    ttl = int(os.environ.get("TRACETREE_QUARANTINE_TTL_DAYS", max_age_days))
+    quarantine_root = Path.cwd() / ".tracetree" / "quarantine"
+    if not quarantine_root.is_dir():
+        return
+    cutoff = _time.time() - ttl * 86400
+    for entry in quarantine_root.iterdir():
+        if entry.is_dir() and entry.stat().st_mtime < cutoff:
+            try:
+                _shutil.rmtree(entry)
+                console.print(f"[dim]Purged stale quarantine entry: {entry.name} (>{ttl}d old)[/]")
+            except Exception as _e:
+                console.print(f"[dim yellow]Quarantine purge failed for {entry.name}: {_e}[/]")
+
+
 def perform_analysis(target: str, target_type: str, progress, console, workspace_root: str = None, controlled_network: bool = False) -> Tuple[bool, float, dict, dict, list, list, list, dict, str]:
     """Helper to run the full sandbox → parse → graph → ML pipeline for a single target.
 
     Returns:
         (is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data, log_path)
     """
+    _purge_stale_quarantine()
     from sandbox.sandbox import run_sandbox
     from monitor.parser import parse_strace_log
     from monitor.signatures import load_signatures, match_signatures
@@ -357,7 +388,10 @@ def perform_analysis(target: str, target_type: str, progress, console, workspace
 
     # ── YARA rule scanning (best-effort) ──
     try:
-        yara_matches = scan_with_yara(log_path=log_path)
+        # If sandbox quarantined extracted binaries, scan them alongside the log.
+        _qdir_sidecar = Path(log_path).with_suffix(".qdir")
+        _quarantine_dir = _qdir_sidecar.read_text(encoding="utf-8").strip() if _qdir_sidecar.exists() else None
+        yara_matches = scan_with_yara(log_path=log_path, package_dir=_quarantine_dir)
         if yara_matches:
             console.print(f"[dim italic]  🔍 {len(yara_matches)} YARA rule(s) matched[/]")
     except Exception as e:
@@ -395,7 +429,7 @@ def perform_analysis(target: str, target_type: str, progress, console, workspace
         progress.update(task4, description="[bold green]✔[/] [dim]Detection complete[/]")
     except Exception as e:
         progress.update(task4, description=f"[bold red]✖[/] [dim]ML failed: {e}[/]")
-        return False, 0.0, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data
+        return False, 0.0, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data, log_path
 
     return is_malicious, confidence, graph_data, parsed_data, signature_matches, temporal_patterns, yara_matches, ngram_data, log_path
 
@@ -430,6 +464,15 @@ def analyze(
     """Run a behavioral cascade analysis on a suspicious target."""
     check_docker_preflight()
 
+    # ── Background CVE auto-sync (non-blocking, triggers once per 24h) ──
+    try:
+        from monitor.cve_sync import auto_sync_background
+        _sync_thread = auto_sync_background(nvd_api_key=os.getenv("NVD_API_KEY"))
+        if _sync_thread:
+            console.print("[dim italic]  📡 CVE threat intelligence update running in background...[/]")
+    except Exception:
+        pass
+
     # Pre-flight: build orchestrator once and reuse it in the analysis block (Issue 1 fix)
     orchestrator = None
     if ai:
@@ -450,6 +493,8 @@ def analyze(
                 border_style="red",
                 expand=False
             ))
+            sys.stdout.flush()
+            sys.stderr.flush()
             # instead of defaulting to a "MALICIOUS" verdict
             raise typer.Exit(1)
 
@@ -614,6 +659,49 @@ def analyze(
                 expand=False,
             ))
 
+        # ── CVE Threat Intelligence ──
+        try:
+            from rich.markup import escape as _resc
+            from monitor.cve_sync import match_cves_for_target, load_audit_trail
+            _cve_trail = load_audit_trail()
+            if _cve_trail.get("cves"):
+                _cve_matches = match_cves_for_target(
+                    current_target, sub_type, parsed_data.get("events", []), _cve_trail
+                )
+                if _cve_matches:
+                    _cve_lines = []
+                    for _cve in _cve_matches[:5]:
+                        # Escape all external-sourced strings before embedding in Rich markup
+                        _cve_id = _resc(str(_cve.get("id", "")))
+                        _sev = _resc(str(_cve.get("severity", "UNKNOWN")))
+                        _score = _cve.get("cvss_score")
+                        _score_str = f" CVSS {_score}" if _score else ""
+                        _kev_badge = "  🚨 [bold red]CISA KEV[/]" if _cve.get("cisa_kev") else ""
+                        _cve_lines.append(
+                            f"🔴 [bold]{_cve_id}[/] ({_sev}{_score_str}){_kev_badge}"
+                        )
+                        _desc = _resc(str(_cve.get("description", ""))[:120])
+                        _ellipsis = "..." if len(_cve.get("description", "")) > 120 else ""
+                        _cve_lines.append(f"   [dim]{_desc}{_ellipsis}[/]")
+                        if _cve.get("suggested_action"):
+                            _action = _resc(str(_cve["suggested_action"]))
+                            _cve_lines.append(f"   [bold yellow]→ Action:[/] {_action}")
+                        if _cve.get("mitre_technique"):
+                            _mitre = _resc(str(_cve["mitre_technique"]))
+                            _cve_lines.append(f"   [dim]MITRE: {_mitre}[/]")
+                        if _cve.get("_match_reasons"):
+                            _reasons = _resc("; ".join(_cve["_match_reasons"]))
+                            _cve_lines.append(f"   [dim cyan]Match: {_reasons}[/]")
+                        _cve_lines.append("")
+                    console.print(Panel(
+                        "\n".join(_cve_lines).strip(),
+                        title=f"[bold]🛡️ CVE Threat Intelligence ({len(_cve_matches)} matched)[/]",
+                        border_style="red",
+                        expand=False,
+                    ))
+        except Exception:
+            pass
+
         # ── AI-native Triage (Legs 1-4, 5 & 8) ──
         # Issues 1 & 2 fix: reuse pre-flight orchestrator; guard against silent verdict corruption.
         ai_triage_ran = False
@@ -660,6 +748,31 @@ def analyze(
 
                 render_ai_triage_panel("Legs 5 & 8: False Positive Jury", triage_results.__dict__)
                 ai_triage_ran = True
+
+                # Legs 6 & 7: MCP Security Remediation — only fires for MCP targets
+                if sub_type == "mcp":
+                    try:
+                        import ast as _ast
+                        from pathlib import Path as _Path
+                        _target_path = _Path(current_target)
+                        vulnerable_schema: dict = {"file": _target_path.name, "tools": []}
+                        try:
+                            _src = _target_path.read_text(errors="replace")
+                            _tree = _ast.parse(_src)
+                            for _node in _ast.walk(_tree):
+                                if isinstance(_node, _ast.FunctionDef):
+                                    vulnerable_schema["tools"].append(_node.name)
+                        except Exception:
+                            pass
+                        _failing = (
+                            ", ".join(m["rule_name"] for m in yara_matches) if yara_matches
+                            else ", ".join(s["name"] for s in sig_matches) if sig_matches
+                            else "suspicious behavior detected by static analysis"
+                        )
+                        mcp_remediation = orchestrator.explain_mcp_remediation(vulnerable_schema, _failing)
+                        render_ai_triage_panel("Legs 6 & 7: MCP Security Remediation", mcp_remediation)
+                    except Exception as _mcp_err:
+                        console.print(f"[yellow]⚠ Legs 6 & 7 skipped: {_mcp_err}[/]")
 
                 # Hard guard: LLM override only allowed when deterministic rules permit.
                 # triage_false_positive() applies the primary guards; this is a defence-in-depth
@@ -766,6 +879,8 @@ def analyze(
 
             save_json(session_path, "receipt.json", receipt)
             save_text(session_path, "terminal_receipt.txt", terminal_receipt_text)
+            if yara_matches:
+                save_json(session_path, "yara_findings.json", yara_matches)
 
             copy_file(session_path, log_path, "runtime.log")
 
@@ -1848,7 +1963,149 @@ def _uninstall_hook_cmd(
     uninstall_hook_cmd(yes=yes)
 
 
-def launch_dashboard():
+_LLM_SETUP_PRESETS = {
+    "openai": {
+        "label": "OpenAI",
+        "key": "OPENAI_API_KEY",
+        "base": "OPENAI_BASE_URL",
+        "model": "OPENAI_MODEL",
+        "base_url": "https://api.openai.com/v1",
+    },
+    "claude": {
+        "label": "Anthropic",
+        "key": "ANTHROPIC_API_KEY",
+        "base": "ANTHROPIC_BASE_URL",
+        "model": "ANTHROPIC_MODEL",
+        "base_url": "https://api.anthropic.com",
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "key": "OPENROUTER_API_KEY",
+        "base": "OPENROUTER_BASE_URL",
+        "model": "OPENROUTER_MODEL",
+        "base_url": "https://openrouter.ai/api/v1",
+    },
+}
+
+
+def _ensure_node_workspace(npm_path: str, workspace: Path, binary: str, label: str, install_dependencies: bool) -> bool:
+    if (workspace / "node_modules" / ".bin" / binary).exists():
+        return True
+    if not install_dependencies:
+        console.print(f"[bold red]✖ {label} dependencies are missing.[/] Run [bold]npm install[/] in [cyan]{workspace.name}/[/] or run [bold]cascade-analyze dashboard[/] to install them automatically.")
+        return False
+    console.print(f"[cyan]Installing {label} dependencies (first run only)...[/]")
+    command = [npm_path, "ci"] if (workspace / "package-lock.json").exists() else [npm_path, "install"]
+    result = subprocess.run(command, cwd=str(workspace))
+    if result.returncode != 0 or not (workspace / "node_modules" / ".bin" / binary).exists():
+        console.print(Panel(
+            f"TraceTree could not install {label} dependencies.\n\nRun [bold]cd {workspace.name} && npm install[/] and retry.",
+            title="[bold red]Dashboard setup failed[/]", border_style="red", expand=False,
+        ))
+        return False
+    return True
+
+
+def _ensure_orchestrator_native_modules(npm_path: str, node_path: str, workspace: Path, install_dependencies: bool) -> bool:
+    """Make sure better-sqlite3 was built for the active Node.js ABI."""
+    # Requiring better-sqlite3 alone does not necessarily dlopen its native
+    # binding. Constructing an in-memory database does, so this catches ABI
+    # mismatches before the dashboard launches its orchestrator process.
+    probe = "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()"
+    check = subprocess.run(
+        [node_path, "-e", probe],
+        cwd=str(workspace),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if check.returncode == 0:
+        return True
+    if not install_dependencies:
+        console.print(
+            "[bold red]✖ The orchestrator native dependency was built for a different Node.js version.[/] "
+            "Run [bold]npm rebuild better-sqlite3[/] in [cyan]orchestrator/[/], or run [bold]cascade-analyze dashboard[/] to repair it automatically."
+        )
+        return False
+    console.print("[cyan]Rebuilding the orchestrator native dependency for this Node.js version...[/]")
+    rebuild = subprocess.run([npm_path, "rebuild", "better-sqlite3"], cwd=str(workspace))
+    if rebuild.returncode == 0:
+        check = subprocess.run(
+            [node_path, "-e", probe],
+            cwd=str(workspace),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    if rebuild.returncode != 0 or check.returncode != 0:
+        console.print(Panel(
+            "TraceTree could not rebuild the orchestrator database module for this Node.js version.\n\n"
+            "Run [bold]cd orchestrator && npm install[/], then retry [bold]cascade-analyze dashboard[/].",
+            title="[bold red]Orchestrator dependency mismatch[/]", border_style="red", expand=False,
+        ))
+        return False
+    return True
+
+
+def _dashboard_preflight(project_root: Path, install_dependencies: bool) -> bool:
+    npm_path = shutil.which("npm")
+    node_path = shutil.which("node")
+    if not npm_path or not node_path:
+        console.print(Panel(
+            "TraceTree Workbench requires Node.js 18 or newer and npm. Install Node.js, then run [bold]cascade-analyze dashboard[/] again.",
+            title="[bold red]Node.js required[/]", border_style="red", expand=False,
+        ))
+        return False
+    version = subprocess.run([node_path, "--version"], capture_output=True, text=True)
+    match = re.search(r"v(\d+)", version.stdout)
+    if version.returncode != 0 or not match or int(match.group(1)) < 18:
+        console.print(Panel(
+            f"Found Node.js {version.stdout.strip() or 'unknown'}. TraceTree Workbench requires Node.js 18 or newer.",
+            title="[bold red]Unsupported Node.js version[/]", border_style="red", expand=False,
+        ))
+        return False
+    frontend_ok = _ensure_node_workspace(npm_path, project_root / "frontend", "next", "frontend", install_dependencies)
+    orchestrator_ok = _ensure_node_workspace(npm_path, project_root / "orchestrator", "tsx", "orchestrator", install_dependencies)
+    native_ok = orchestrator_ok and _ensure_orchestrator_native_modules(
+        npm_path, node_path, project_root / "orchestrator", install_dependencies
+    )
+    if not (frontend_ok and orchestrator_ok and native_ok):
+        return False
+    docker_ok = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 if shutil.which("docker") else False
+    if not docker_ok:
+        console.print("[yellow]⚠ Docker is not available. The dashboard can open, but sandbox scans will not run until Docker is started.[/]")
+    return True
+
+
+def _llm_setup_status(project_root: Path) -> Tuple[Optional[str], bool]:
+    """Return configured provider and whether its required local values exist.
+
+    Values are intentionally never logged: this only checks whether the expected
+    names are present in the ignored root .env file.
+    """
+    env_path = project_root / ".env"
+    values: Dict[str, str] = {}
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                key, value = line.split("=", 1)
+                values[key.strip()] = value.strip()
+    provider = (os.getenv("LLM_PROVIDER") or values.get("LLM_PROVIDER", "")).lower() or None
+    if provider not in _LLM_SETUP_PRESETS:
+        return provider, provider in ("mock", "ollama")
+    preset = _LLM_SETUP_PRESETS[provider]
+    return provider, bool(
+        (os.getenv(preset["key"]) or values.get(preset["key"]))
+        and (os.getenv(preset["model"]) or values.get(preset["model"]))
+        and (os.getenv(preset["base"]) or values.get(preset["base"]))
+    )
+
+
+@app.command(name="setup")
+def setup_cmd():
+    """Launch the guided browser setup for a first-time user."""
+    launch_dashboard(force_setup=True)
+
+
+def launch_dashboard(check_only: bool = False, force_setup: bool = False):
     """
     Orchestrate and run both the API backend and the Frontend Next.js client concurrently.
     """
@@ -1860,17 +2117,11 @@ def launch_dashboard():
     project_root = Path(__file__).resolve().parent
     frontend_dir = project_root / "frontend"
     
-    # Pre-check npm
-    if shutil.which("npm") is None:
-        console.print(Panel(
-            "[bold red]Node.js / npm not found in PATH.[/]\n\n"
-            "TraceTree GUI Mode requires Node.js (>= 18) to be installed.\n"
-            "Please download it from [blue]https://nodejs.org[/] and try again.",
-            title="[bold red]Launch Error[/]",
-            border_style="red",
-            expand=False
-        ))
+    if not _dashboard_preflight(project_root, install_dependencies=not check_only):
         raise typer.Exit(1)
+    if check_only:
+        console.print("[green]✔ Dashboard preflight passed. Run [bold]cascade-analyze dashboard[/] to launch it.[/]")
+        return
 
     console.print("[cyan]Starting TraceTree Services...[/]\n")
     
@@ -1913,64 +2164,108 @@ def launch_dashboard():
         except Exception:
             pass
 
-    # Determine API port
+    # Determine API port — auto-advance if occupied
     api_port_str = os.environ.get("TRACETREE_API_PORT", "8000")
     try:
         api_port = int(api_port_str)
     except ValueError:
         api_port = 8000
 
-    # Issue 4 fix: use module-level _is_port_in_use() — testable, not re-created per call.
-    if _is_port_in_use(api_port):
-        # Try to get the occupying PID
-        occupying_pid = None
-        try:
-            import subprocess
-            out = subprocess.check_output(["lsof", "-t", f"-i:{api_port}"], text=True)
-            pids = [int(p.strip()) for p in out.strip().split("\n") if p.strip()]
-            if pids:
-                occupying_pid = pids[0]
-        except Exception:
-            pass
+    def _find_free_port(start: int, max_attempts: int = 20) -> int:
+        for p in range(start, start + max_attempts):
+            if not _is_port_in_use(p):
+                return p
+        return start
 
-        pid_info = f" (PID {occupying_pid})" if occupying_pid else ""
-        console.print(Panel(
-            f"[bold red]Port {api_port} is already in use{pid_info}.[/]\n\n"
-            f"The TraceTree API Gateway cannot start because another process is occupying port {api_port}.\n\n"
-            f"[bold yellow]How to fix:[/]\n"
-            f"1. Free the port: run [cyan]kill -9 {occupying_pid}[/] (if you want to terminate the process).\n"
-            f"2. Run on a different port: set the [cyan]TRACETREE_API_PORT[/] environment variable:\n"
-            f"   [cyan]export TRACETREE_API_PORT=8001[/] (or another free port) before running the command.",
-            title="[bold red]Port Conflict[/]",
-            border_style="red",
-            expand=False
-        ))
-        raise typer.Exit(1)
+    original_api_port = api_port
+    api_port = _find_free_port(api_port)
+    if api_port != original_api_port:
+        console.print(f"[yellow]Port {original_api_port} in use — using {api_port} for API Gateway.[/]")
+
+    # Determine frontend port — auto-advance if occupied
+    frontend_port = _find_free_port(3001)
+
+    # Write dashboard session_start so Live view starts fresh each open
+    import json as _json
+    import datetime as _dt
+    state_dir = project_root / ".tracetree"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    setup_exit_marker = state_dir / "setup-exit"
+    if force_setup:
+        setup_exit_marker.unlink(missing_ok=True)
+    setup_env_path = project_root / ".env"
+    setup_env_mtime = setup_env_path.stat().st_mtime_ns if setup_env_path.exists() else None
+    session_start_ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    try:
+        with open(state_dir / "state.json", "w") as _sf:
+            _json.dump({"session_start": session_start_ts}, _sf)
+    except Exception:
+        pass
 
     try:
         # Start API server (Uvicorn)
         # We prefer the virtual environment's Python if it exists, to ensure uvicorn is available
         python_exe = sys.executable
-        venv_python = project_root / "venv" / "bin" / ("python.exe" if platform.system().lower() == "windows" else "python3")
-        if venv_python.exists():
-            python_exe = str(venv_python)
+        if "venv" not in python_exe:
+            venv_python314 = project_root / "venv" / "bin" / "python3.14"
+            venv_python = project_root / "venv" / "bin" / ("python.exe" if platform.system().lower() == "windows" else "python3")
+            if venv_python314.exists():
+                python_exe = str(venv_python314)
+            elif venv_python.exists():
+                python_exe = str(venv_python)
             
         api_cmd = [python_exe, "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", str(api_port)]
+        api_env = os.environ.copy()
+        cors_origins = ",".join([
+            f"http://localhost:{frontend_port}",
+            f"http://127.0.0.1:{frontend_port}",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ])
+        api_env["TRACETREE_CORS_ORIGINS"] = cors_origins
         api_proc = subprocess.Popen(
             api_cmd,
-            env=os.environ,
+            env=api_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1
         )
         
-        # Start Orchestrator server
+        # Start Orchestrator server. Dependencies were validated before any
+        # process was launched, so a fresh clone fails clearly instead of
+        # taking the whole dashboard down mid-boot.
         orchestrator_dir = project_root / "orchestrator"
-        npx_path = shutil.which("npx") or "npx"
-        orch_cmd = [npx_path, "tsx", "src/server.ts"]
-        orch_env = os.environ.copy()
-        orch_env["PYTHON_PATH"] = python_exe
+        npm_path = shutil.which("npm") or "npm"
+        # Use the same runtime that preflight used to validate better-sqlite3.
+        # Invoking the tsx shim directly re-runs its /usr/bin/env node shebang,
+        # which can select a different nvm/Homebrew Node and break native ABI.
+        node_path = shutil.which("node") or "node"
+        tsx_path = str(orchestrator_dir / "node_modules" / ".bin" / "tsx")
+        orch_cmd = [node_path, tsx_path, "src/server.ts"]
+        def build_orchestrator_env():
+            env = os.environ.copy()
+            env["PYTHON_PATH"] = python_exe
+            env["DOTENV_CONFIG_PATH"] = str(project_root / ".env")
+            configured_provider, provider_ready = _llm_setup_status(project_root)
+            if configured_provider in _LLM_SETUP_PRESETS and not provider_ready:
+                console.print(Panel(
+                    f"[yellow]{_LLM_SETUP_PRESETS[configured_provider]['label']} is selected but its local key, base URL, or model is incomplete.[/]\n\n"
+                    "Starting the Workbench in local mock mode so the setup screen remains available. Complete the browser setup or run [bold]cascade-analyze setup[/].",
+                    title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
+                ))
+                env["LLM_PROVIDER"] = "mock"
+            elif configured_provider is None:
+                console.print("[dim]No cloud LLM is configured. Starting the Workbench in local mock mode; complete setup when the browser opens.[/]")
+            elif configured_provider not in _LLM_SETUP_PRESETS and configured_provider not in ("mock", "ollama"):
+                console.print(Panel(
+                    f"[yellow]Unknown LLM_PROVIDER value: {configured_provider}.[/]\n\nStarting in local mock mode. Choose OpenAI, Anthropic, OpenRouter, or Ollama in setup.",
+                    title="[bold yellow]LLM setup needed[/]", border_style="yellow", expand=False,
+                ))
+                env["LLM_PROVIDER"] = "mock"
+            return env
+
+        orch_env = build_orchestrator_env()
         orch_proc = subprocess.Popen(
             orch_cmd,
             env=orch_env,
@@ -1981,12 +2276,15 @@ def launch_dashboard():
             bufsize=1
         )
         
-        # Start Frontend server (Next.js via npm run dev on port 3001)
-        npm_path = shutil.which("npm") or "npm"
-        frontend_cmd = [npm_path, "run", "dev", "--", "-p", "3001"]
+        # Start Frontend server (Next.js via npm run dev)
+        frontend_cmd = [npm_path, "run", "dev", "--", "-p", str(frontend_port)]
+        frontend_env = os.environ.copy()
+        # The API port can advance when 8000 is busy. Pass the actual local
+        # endpoint to the setup wizard instead of making it guess port 8000.
+        frontend_env["NEXT_PUBLIC_TRACETREE_API_URL"] = f"http://127.0.0.1:{api_port}"
         frontend_proc = subprocess.Popen(
             frontend_cmd,
-            env=os.environ,
+            env=frontend_env,
             cwd=str(frontend_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -2011,8 +2309,19 @@ def launch_dashboard():
     # Wait for a brief moment to let servers initialize
     time.sleep(3)
     
+    # Do not advertise a URL when a child service already exited. The relevant
+    # process output has been streamed above; this adds an actionable summary.
+    stopped = [name for proc, name in [(api_proc, "API Engine"), (frontend_proc, "Frontend Client"), (orch_proc, "Orchestrator")] if proc.poll() is not None]
+    if stopped:
+        console.print(Panel(
+            f"{' and '.join(stopped)} stopped during startup.\n\nRun [bold]cascade-analyze dashboard --check[/] for dependency diagnostics. If this is a provider configuration issue, run [bold]cascade-analyze setup[/] or complete the browser setup screen after starting in local mock mode.",
+            title="[bold red]Dashboard did not start[/]", border_style="red", expand=False,
+        ))
+        cleanup()
+        return
+
     # Print the beautiful URL Panel
-    url = "http://localhost:3001"
+    url = f"http://localhost:{frontend_port}{'?setup=1' if force_setup else ''}"
     orch_url = "http://localhost:3000"
     api_url = f"http://127.0.0.1:{api_port}"
     
@@ -2044,9 +2353,13 @@ def launch_dashboard():
                 console.print(f"[cyan]Spawning scan for [bold]{target}[/] in GUI mode...[/]")
                 
                 python_exe = sys.executable
-                venv_python = project_root / "venv" / "bin" / ("python.exe" if platform.system().lower() == "windows" else "python3")
-                if venv_python.exists():
-                    python_exe = str(venv_python)
+                if "venv" not in python_exe:
+                    venv_python314 = project_root / "venv" / "bin" / "python3.14"
+                    venv_python = project_root / "venv" / "bin" / ("python.exe" if platform.system().lower() == "windows" else "python3")
+                    if venv_python314.exists():
+                        python_exe = str(venv_python314)
+                    elif venv_python.exists():
+                        python_exe = str(venv_python)
                 
                 # Spawn a background process running 'python3 cli.py analyze <target> --gui'
                 subprocess.Popen(
@@ -2080,6 +2393,31 @@ def launch_dashboard():
             if orch_proc.poll() is not None:
                 console.print("[bold red]❌ Orchestrator stopped unexpectedly.[/]")
                 break
+            if force_setup and setup_exit_marker.exists():
+                console.print("[green]Setup saved. Closing temporary setup services.[/]")
+                break
+            if force_setup:
+                current_mtime = setup_env_path.stat().st_mtime_ns if setup_env_path.exists() else None
+                if current_mtime != setup_env_mtime:
+                    setup_env_mtime = current_mtime
+                    console.print("[cyan]Configuration saved — reloading the AI provider…[/]")
+                    orch_proc.send_signal(signal.SIGINT)
+                    try:
+                        orch_proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        orch_proc.kill()
+                    orch_proc = subprocess.Popen(
+                        orch_cmd,
+                        env=build_orchestrator_env(),
+                        cwd=str(orchestrator_dir),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                    )
+                    reload_thread = threading.Thread(target=stream_output, args=(orch_proc.stdout, "Orchestrator", "#00FFFF"), daemon=True)
+                    reload_thread.start()
+                    threads.append(reload_thread)
             time.sleep(1)
     except KeyboardInterrupt:
         pass
@@ -2088,9 +2426,9 @@ def launch_dashboard():
 
 
 @app.command(name="dashboard")
-def dashboard_cmd():
+def dashboard_cmd(check: bool = typer.Option(False, "--check", help="Validate Node, frontend, orchestrator, and Docker prerequisites without starting services.")):
     """Launch the TraceTree local web dashboard."""
-    launch_dashboard()
+    launch_dashboard(check_only=check)
 
 
 dashboard_cli = typer.Typer(
@@ -2099,9 +2437,126 @@ dashboard_cli = typer.Typer(
 )
 
 @dashboard_cli.command()
-def _dashboard_cmd():
+def _dashboard_cmd(check: bool = typer.Option(False, "--check", help="Validate prerequisites without starting services.")):
     """Launch the TraceTree local web dashboard."""
-    launch_dashboard()
+    launch_dashboard(check_only=check)
+
+
+# ------------------------------------------------------------------ #
+#  cascade-cve-sync — CVE threat intelligence sync + AI parsing
+#  Separate from cascade-train (which trains the RF ML model).
+# ------------------------------------------------------------------ #
+
+cve_sync_cli = typer.Typer(
+    name="cascade-cve-sync",
+    help="Sync CVE threat intelligence (NVD, CISA KEV, OSV) and parse with AI.",
+)
+
+
+@cve_sync_cli.command()
+def _cve_sync_cmd(
+    nvd_key: str = typer.Option(
+        None,
+        "--nvd-key",
+        envvar="NVD_API_KEY",
+        help="NVD API key (optional). Get one at nvd.nist.gov/developers/request-an-api-key",
+    ),
+    no_ai: bool = typer.Option(False, "--no-ai", help="Skip AI parsing — store raw CVEs only."),
+    force: bool = typer.Option(False, "--force", "-f", help="Force sync even if <24h since last sync."),
+):
+    """
+    Sync global CVE threat intelligence and parse with AI.
+
+    Fetches from NVD API v2, CISA Known Exploited Vulnerabilities, and OSV.dev.
+    Sends relevant CVEs to Ollama (qwen2.5-coder) to extract behavioral indicators.
+    Stores results in .tracetree/cve_audit/cve_audit_trail.json.
+
+    The audit trail is automatically consulted during cascade-analyze, cascade-watch,
+    and cascade-check to surface CVEs relevant to the scanned target.
+
+    API key guide:
+      NVD:      https://nvd.nist.gov/developers/request-an-api-key  (optional, 10x rate limit)
+      CISA KEV: no key needed
+      OSV.dev:  no key needed
+
+    Run once manually or let cascade-analyze auto-trigger it every 24 hours.
+    """
+    from monitor.cve_sync import sync_cves, check_needs_sync, load_audit_trail
+
+    if not force and not check_needs_sync():
+        trail = load_audit_trail()
+        console.print(Panel(
+            f"[bold green]✔ CVE trail is up to date.[/]\n"
+            f"Last sync: [dim]{trail.get('last_sync', 'unknown')}[/]\n"
+            f"Total CVEs tracked: [bold]{trail.get('total_count', 0)}[/]\n\n"
+            f"[dim]Run with --force to sync anyway.[/]",
+            title="[bold]CVE Sync Status[/]",
+            border_style="green",
+            expand=False,
+        ))
+        return
+
+    console.print(Panel.fit(
+        "[bold cyan]TraceTree CVE Threat Intelligence Sync[/]\n"
+        "Sources: NVD API v2 · CISA KEV · OSV.dev (PyPI + npm)\n\n"
+        "[dim]API Keys (set as env vars or pass via --nvd-key):[/]\n"
+        "[dim]  NVD_API_KEY — nvd.nist.gov/developers/request-an-api-key (optional)[/]\n"
+        "[dim]  CISA KEV and OSV.dev require no key.[/]",
+        border_style="cyan",
+    ))
+    console.print()
+
+    progress_messages: list = []
+
+    with Progress(
+        SpinnerColumn("dots2", style="cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("[yellow]Initialising CVE sync...", total=None)
+
+        def on_progress(msg: str) -> None:
+            progress.update(task, description=f"[yellow]{msg}[/]")
+            progress_messages.append(msg)
+
+        try:
+            trail = sync_cves(
+                nvd_api_key=nvd_key,
+                use_ai=not no_ai,
+                on_progress=on_progress,
+            )
+            progress.update(task, description="[bold green]✔ Sync complete![/]")
+        except Exception as e:
+            progress.update(task, description=f"[bold red]✖ Sync failed: {e}[/]")
+            console.print(f"\n[bold red]Error:[/] {e}")
+            raise typer.Exit(1)
+
+    # Count new CVEs from progress messages
+    new_count = 0
+    for msg in progress_messages:
+        if "new CVEs added" in msg:
+            try:
+                new_count = int(msg.split("new CVEs added")[0].strip().split()[-1])
+            except Exception:
+                pass
+
+    console.print("\n")
+    console.print(Panel(
+        f"[bold green]✅ CVE Threat Intelligence Updated![/]\n\n"
+        f"New CVEs added this sync:  [bold]{new_count}[/]\n"
+        f"Total CVEs in audit trail: [bold]{trail.get('total_count', 0)}[/]\n"
+        f"Last sync:                 [dim]{trail.get('last_sync', 'just now')}[/]\n\n"
+        f"[dim]Audit trail → .tracetree/cve_audit/cve_audit_trail.json[/]\n"
+        f"[dim]Next auto-sync triggers in 24 hours via cascade-analyze.[/]\n\n"
+        f"[bold yellow]API Key Guide:[/]\n"
+        f"  NVD (10x rate limit): [cyan]nvd.nist.gov/developers/request-an-api-key[/]\n"
+        f"  Set as: [cyan]export NVD_API_KEY=your-key-here[/]\n"
+        f"  CISA KEV & OSV.dev: no key needed",
+        title="[bold green]🛡️ CVE Training Complete[/]",
+        border_style="green",
+        expand=False,
+    ))
 
 
 if __name__ == "__main__":

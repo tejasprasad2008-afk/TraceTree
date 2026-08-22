@@ -33,6 +33,7 @@ cascade-scan = "cli:scan_app"
 cascade-install-hook = "cli:install_hook_cli"
 cascade-uninstall-hook = "cli:uninstall_hook_cli"
 cascade-dashboard = "cli:dashboard_cli"
+cascade-cve-sync = "cli:cve_sync_cli"
 
 [tool.setuptools]
 packages = ["api", "sandbox", "monitor", "graph", "ml", "mcp", "mascot", "watcher", "hooks"]

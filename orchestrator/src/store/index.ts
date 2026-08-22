@@ -10,7 +10,7 @@ export interface ScanRecord {
   id: string;
   userId: string;
   target: string;
-  verdict: 'MALICIOUS' | 'CLEAN' | 'UNKNOWN';
+  verdict: 'malicious' | 'suspicious' | 'clean' | 'unknown';
   confidence: number;
   findings: string; // JSON string
   createdAt: string;

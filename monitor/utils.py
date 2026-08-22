@@ -18,6 +18,8 @@ BENIGN_BINARIES: FrozenSet[str] = frozenset([
     "/usr/sbin/uname", "/usr/local/sbin/uname", "/sbin/uname",
     "/usr/bin/lsb_release", "/bin/lsb_release", "/usr/local/bin/lsb_release",
     "/usr/sbin/lsb_release", "/usr/local/sbin/lsb_release", "/sbin/lsb_release",
+    "/usr/bin/timeout", "/bin/timeout", "timeout",
+    "/usr/bin/wine64", "/usr/local/bin/wine64", "wine64",
 ])
 
 KNOWN_SAFE_NETWORKS: FrozenSet[str] = frozenset([
