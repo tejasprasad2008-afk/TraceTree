@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # Ensure project root on path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def load_fixtures(csv_path):
@@ -46,10 +46,10 @@ def main():
     )
     import skops.io as sio
 
-    base_dir = Path(__file__).parent
-    csv_path = base_dir / "data" / "labeled_fixtures.csv"
-    model_path = base_dir / "ml" / "model.skops"
-    metrics_path = base_dir / "ml" / "metrics.json"
+    project_root = Path(__file__).resolve().parent.parent
+    csv_path = project_root / "data" / "labeled_fixtures.csv"
+    model_path = project_root / "ml" / "model.skops"
+    metrics_path = project_root / "ml" / "metrics.json"
 
     if not csv_path.exists():
         print("ERROR: {} not found. Run bridge_cic_to_tracetree.py first.".format(csv_path))

@@ -508,7 +508,9 @@ def run_retrain_task():
     retrain_status["error"] = None
     try:
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script_path = os.path.join(project_root, "retrain_model.py")
+        script_path = os.path.join(project_root, "scripts", "retrain_model.py")
+        if not os.path.exists(script_path):
+            script_path = os.path.join(project_root, "retrain_model.py")
 
         proc = subprocess.run(
             [sys.executable, script_path],

@@ -1048,7 +1048,10 @@ def train_cli():
 
     if auth_key:
         try:
-            import ingest_malwarebazaar
+            try:
+                from scripts import ingest_malwarebazaar
+            except ImportError:
+                import ingest_malwarebazaar
             console.print(Panel("[bold cyan]Fetching Samples & Parsing Sandbox Footprints[/]", border_style="cyan", expand=False))
             ingest_malwarebazaar.main()
             console.print("\n[bold green]✔ Online sandbox ingestion complete![/]\n")

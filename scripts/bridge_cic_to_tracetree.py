@@ -16,8 +16,9 @@ from pathlib import Path
 # ── Constants ──────────────────────────────────────────────────────────────── #
 
 CIC_CSV_PATH = Path.home() / "Downloads" / "Obfuscated-MalMem2022.csv"
-FIXTURES_PATH = Path(__file__).parent / "data" / "labeled_fixtures.csv"
-BACKUP_PATH = Path(__file__).parent / "data" / "labeled_fixtures_original.csv"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FIXTURES_PATH = PROJECT_ROOT / "data" / "labeled_fixtures.csv"
+BACKUP_PATH = PROJECT_ROOT / "data" / "labeled_fixtures_original.csv"
 
 SAMPLES_PER_CLASS = 2500
 NOISE_SIGMA_FRACTION = 0.03  # 3% noise — lighter to preserve class separation
