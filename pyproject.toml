@@ -34,9 +34,11 @@ cascade-install-hook = "cli:install_hook_cli"
 cascade-uninstall-hook = "cli:uninstall_hook_cli"
 cascade-dashboard = "cli:dashboard_cli"
 cascade-cve-sync = "cli:cve_sync_cli"
+cascade-adaptive-npm = "npm_adaptive.cli:main"
+cascade-audit = "cli:audit_cli"
 
 [tool.setuptools]
-packages = ["api", "sandbox", "monitor", "graph", "ml", "mcp", "mascot", "watcher", "hooks"]
+packages = ["api", "sandbox", "monitor", "graph", "ml", "mcp", "mascot", "watcher", "hooks", "npm_adaptive"]
 py-modules = ["cli"]
 
 [tool.pytest.ini_options]

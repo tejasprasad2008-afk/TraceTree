@@ -5,6 +5,9 @@ test('WebSocket should reconnect after server restart', async ({ page }) => {
   test.setTimeout(30000);
 
   // 1. Go to the dashboard
+  await page.addInitScript(() => {
+    localStorage.setItem('tracetree_setup_complete', 'true');
+  });
   await page.goto('http://localhost:3001');
 
   // 2. Wait for initial connection

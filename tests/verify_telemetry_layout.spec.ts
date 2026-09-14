@@ -1,17 +1,20 @@
 
 import { test, expect } from '@playwright/test';
 
-const ORCHESTRATOR_URL = 'http://localhost:3000';
+const ORCHESTRATOR_URL = 'http://127.0.0.1:8000';
 const TELEMETRY_URL = `${ORCHESTRATOR_URL}/api/telemetry`;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 test('Verify Telemetry and Secure the Agent Overlay', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('tracetree_setup_complete', 'true');
+  });
   // Go to the dashboard
   await page.goto('http://localhost:3001'); // Assuming frontend is on 3001
 
   // Wait for initial load
-  await expect(page.locator('h1')).toContainText('TRACETREE');
+  await expect(page.locator('span:has-text("Trace")').first()).toBeVisible();
 
   // Trigger Mock Telemetry: Investigation Started
   await page.request.post(TELEMETRY_URL, {

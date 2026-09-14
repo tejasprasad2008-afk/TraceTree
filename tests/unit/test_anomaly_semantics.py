@@ -49,7 +49,8 @@ def test_severity_adjusted_confidence_rules():
         total_severity=35.0,
         sensitive_file_count=0,
         suspicious_network_count=0,
-        temporal_pattern_count=0
+        temporal_pattern_count=0,
+        concrete_evidence_count=1,
     )
     assert is_mal is True
     # confidence + 25.0 -> 50.0 + 25.0 -> 75.0
@@ -63,7 +64,8 @@ def test_severity_adjusted_confidence_rules():
         total_severity=20.0,
         sensitive_file_count=0,
         suspicious_network_count=0,
-        temporal_pattern_count=0
+        temporal_pattern_count=0,
+        concrete_evidence_count=1,
     )
     # confidence = 40.0 + 30.0 = 70.0. Since 70.0 > 60.0, flips to malicious.
     assert is_mal is True
@@ -78,14 +80,28 @@ def test_severity_adjusted_confidence_rules():
         total_severity=8.0,
         sensitive_file_count=0,
         suspicious_network_count=0,
-        temporal_pattern_count=0
+        temporal_pattern_count=0,
+        concrete_evidence_count=1,
     )
     # confidence = 40.0 + 10.0 = 50.0. Does not flip.
     assert is_mal is False
     assert score == 50.0
     assert any("Medium syscall severity boost" in r for r in reasons)
 
-    # 5. Temporal patterns, sensitive files, suspicious networks
+    # 5. Aggregate activity without an actual threat signal cannot flip a verdict.
+    is_mal, score, reasons = _severity_adjusted_confidence(
+        is_malicious=False,
+        ml_confidence=35.5,
+        total_severity=15.5,
+        sensitive_file_count=0,
+        suspicious_network_count=0,
+        temporal_pattern_count=0,
+    )
+    assert is_mal is False
+    assert score == 35.5
+    assert any("not escalated" in r for r in reasons)
+
+    # 6. Temporal patterns, sensitive files, suspicious networks
     is_mal, score, reasons = _severity_adjusted_confidence(
         is_malicious=False,
         ml_confidence=40.0,
@@ -101,7 +117,7 @@ def test_severity_adjusted_confidence_rules():
     assert any("Sensitive file accesses: 2" in r for r in reasons)
     assert any("Suspicious network connections: 3" in r for r in reasons)
 
-    # 6. Verdict flipped by multiple temporal patterns (>= 2)
+    # 7. Verdict flipped by multiple temporal patterns (>= 2)
     is_mal, score, reasons = _severity_adjusted_confidence(
         is_malicious=False,
         ml_confidence=30.0,

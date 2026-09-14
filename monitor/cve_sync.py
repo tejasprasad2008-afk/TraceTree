@@ -40,18 +40,37 @@ OSV_API_URL = "https://api.osv.dev/v1/query"
 
 # Packages TraceTree actively monitors through sandbox
 TRACETREE_SURFACE = {
-    "python", "pip", "setuptools", "pip-tools", "wheel",
-    "npm", "node", "nodejs", "yarn",
-    "fastapi", "uvicorn", "starlette",
-    "docker", "requests", "urllib3", "httpx", "aiohttp",
-    "cryptography", "paramiko", "flask", "django",
-    "pydantic", "sqlalchemy", "celery",
+    "python",
+    "pip",
+    "setuptools",
+    "pip-tools",
+    "wheel",
+    "npm",
+    "node",
+    "nodejs",
+    "yarn",
+    "fastapi",
+    "uvicorn",
+    "starlette",
+    "docker",
+    "requests",
+    "urllib3",
+    "httpx",
+    "aiohttp",
+    "cryptography",
+    "paramiko",
+    "flask",
+    "django",
+    "pydantic",
+    "sqlalchemy",
+    "celery",
 }
 
 
 # --------------------------------------------------------------------------- #
 #  Persistence
 # --------------------------------------------------------------------------- #
+
 
 def _ensure_audit_dir() -> None:
     _AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -65,15 +84,21 @@ def check_needs_sync() -> bool:
         data = json.loads(_SYNC_LOCK_FILE.read_text())
         last = datetime.fromisoformat(data["last_sync"])
         return datetime.now(timezone.utc) - last > timedelta(hours=SYNC_INTERVAL_HOURS)
-    except Exception:
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        # Corrupt/unreadable lock file → force a resync, but make it visible.
+        log.warning("Sync lock file unreadable (%s) — forcing resync", e)
         return True
 
 
 def _update_sync_timestamp() -> None:
     _ensure_audit_dir()
-    _SYNC_LOCK_FILE.write_text(json.dumps({
-        "last_sync": datetime.now(timezone.utc).isoformat(),
-    }))
+    _SYNC_LOCK_FILE.write_text(
+        json.dumps(
+            {
+                "last_sync": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    )
 
 
 def load_audit_trail() -> dict:
@@ -81,7 +106,8 @@ def load_audit_trail() -> dict:
         return {"last_sync": None, "total_count": 0, "cves": []}
     try:
         return json.loads(_AUDIT_FILE.read_text())
-    except Exception:
+    except (OSError, ValueError) as e:
+        log.warning("Audit trail unreadable (%s) — starting from empty trail", e)
         return {"last_sync": None, "total_count": 0, "cves": []}
 
 
@@ -98,41 +124,50 @@ def save_audit_trail(trail: dict) -> None:
 #  Fetchers
 # --------------------------------------------------------------------------- #
 
+
 def _fetch_cisa_kev() -> list:
     """CISA Known Exploited Vulnerabilities — no API key needed."""
+    import urllib.error
     import urllib.request
+
     try:
         with urllib.request.urlopen(CISA_KEV_URL, timeout=15) as r:
             data = json.loads(r.read(_MAX_RESPONSE_BYTES))
         result = []
         for v in data.get("vulnerabilities", []):
-            result.append({
-                "id": v.get("cveID", ""),
-                "description": v.get("shortDescription", ""),
-                "severity": "CRITICAL",
-                "cvss_score": 9.0,
-                "epss_score": None,
-                "affected_products": [
-                    v.get("product", "").lower(),
-                    v.get("vendorProject", "").lower(),
-                ],
-                "cisa_kev": True,
-                "published": v.get("dateAdded", ""),
-                "required_action": v.get("requiredAction", ""),
-                "source": "cisa_kev",
-            })
+            result.append(
+                {
+                    "id": v.get("cveID", ""),
+                    "description": v.get("shortDescription", ""),
+                    "severity": "CRITICAL",
+                    "cvss_score": 9.0,
+                    "epss_score": None,
+                    "affected_products": [
+                        v.get("product", "").lower(),
+                        v.get("vendorProject", "").lower(),
+                    ],
+                    "cisa_kev": True,
+                    "published": v.get("dateAdded", ""),
+                    "required_action": v.get("requiredAction", ""),
+                    "source": "cisa_kev",
+                }
+            )
         return result
-    except Exception as e:
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        # Expected failure modes: network errors, HTTP errors, malformed JSON.
         log.warning("CISA KEV fetch failed: %s", e)
         return []
 
 
 def _fetch_nvd_delta(api_key: Optional[str] = None, hours: int = 24) -> list:
     """NVD API v2 — CVEs published in the last N hours."""
+    import urllib.error
     import urllib.request
     import urllib.parse
 
-    pub_start = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.000")
+    pub_start = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000"
+    )
     pub_end = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000")
 
     params = {"pubStartDate": pub_start, "pubEndDate": pub_end, "resultsPerPage": 100}
@@ -172,31 +207,36 @@ def _fetch_nvd_delta(api_key: Optional[str] = None, hours: int = 24) -> list:
                         if len(parts) > 4:
                             affected.append(parts[4].lower())
 
-            result.append({
-                "id": cve_id,
-                "description": desc,
-                "severity": severity,
-                "cvss_score": cvss_score,
-                "epss_score": None,
-                "affected_products": list(set(affected)),
-                "cisa_kev": False,
-                "published": cve.get("published", ""),
-                "source": "nvd",
-            })
+            result.append(
+                {
+                    "id": cve_id,
+                    "description": desc,
+                    "severity": severity,
+                    "cvss_score": cvss_score,
+                    "epss_score": None,
+                    "affected_products": list(set(affected)),
+                    "cisa_kev": False,
+                    "published": cve.get("published", ""),
+                    "source": "nvd",
+                }
+            )
         return result
-    except Exception as e:
+    except (urllib.error.URLError, OSError, ValueError) as e:
         log.warning("NVD fetch failed: %s", e)
         return []
 
 
 def _fetch_osv_delta() -> list:
     """OSV.dev — recent vulnerabilities for PyPI and npm ecosystems."""
+    import urllib.error
     import urllib.request
 
     result = []
     for ecosystem in ("PyPI", "npm"):
         try:
-            payload = json.dumps({"query": {"package": {"ecosystem": ecosystem}}}).encode()
+            payload = json.dumps(
+                {"query": {"package": {"ecosystem": ecosystem}}}
+            ).encode()
             req = urllib.request.Request(
                 OSV_API_URL,
                 data=payload,
@@ -211,18 +251,20 @@ def _fetch_osv_delta() -> list:
                     p.get("package", {}).get("name", "").lower()
                     for p in v.get("affected", [])
                 ]
-                result.append({
-                    "id": v.get("id", ""),
-                    "description": v.get("summary", ""),
-                    "severity": "MEDIUM",
-                    "cvss_score": None,
-                    "epss_score": None,
-                    "affected_products": affected_names,
-                    "cisa_kev": False,
-                    "published": v.get("published", ""),
-                    "source": f"osv_{ecosystem.lower()}",
-                })
-        except Exception as e:
+                result.append(
+                    {
+                        "id": v.get("id", ""),
+                        "description": v.get("summary", ""),
+                        "severity": "MEDIUM",
+                        "cvss_score": None,
+                        "epss_score": None,
+                        "affected_products": affected_names,
+                        "cisa_kev": False,
+                        "published": v.get("published", ""),
+                        "source": f"osv_{ecosystem.lower()}",
+                    }
+                )
+        except (urllib.error.URLError, OSError, ValueError) as e:
             log.warning("OSV %s fetch failed: %s", ecosystem, e)
 
     return result
@@ -231,6 +273,7 @@ def _fetch_osv_delta() -> list:
 # --------------------------------------------------------------------------- #
 #  AI parsing
 # --------------------------------------------------------------------------- #
+
 
 def _sanitize_for_prompt(text: str) -> str:
     """Strip control characters and truncate to limit prompt injection surface."""
@@ -241,6 +284,7 @@ def _sanitize_for_prompt(text: str) -> str:
 
 def _parse_cves_with_ai(cves: list) -> list:
     """Send CVEs to Ollama (qwen2.5-coder) for behavioral indicator extraction."""
+    import urllib.error
     import urllib.request
 
     batch = cves[:20]
@@ -266,17 +310,18 @@ def _parse_cves_with_ai(cves: list) -> list:
         "(syscall names, file paths, network patterns)\n"
         'Field 3: "mitre_technique" — MITRE ATT&CK ID (e.g. T1055) or empty string\n\n'
         "Return ONLY the JSON array. No prose, no markdown fences.\n\n"
-        "CVEs:\n"
-        + json.dumps(sanitized_batch, indent=1)
+        "CVEs:\n" + json.dumps(sanitized_batch, indent=1)
     )
 
     try:
-        payload = json.dumps({
-            "model": "qwen2.5-coder:7b",
-            "prompt": prompt,
-            "stream": False,
-            "format": "json",
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": "qwen2.5-coder:7b",
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+            }
+        ).encode()
         req = urllib.request.Request(
             "http://localhost:11434/api/generate",
             data=payload,
@@ -289,10 +334,20 @@ def _parse_cves_with_ai(cves: list) -> list:
         if isinstance(parsed, list) and len(parsed) == len(batch):
             for i, enrichment in enumerate(parsed):
                 batch[i]["suggested_action"] = enrichment.get("suggested_action", "")
-                batch[i]["tracetree_indicators"] = enrichment.get("tracetree_indicators", [])
+                batch[i]["tracetree_indicators"] = enrichment.get(
+                    "tracetree_indicators", []
+                )
                 batch[i]["mitre_technique"] = enrichment.get("mitre_technique", "")
         return batch
-    except Exception as e:
+    except (
+        urllib.error.URLError,
+        OSError,
+        ValueError,
+        AttributeError,
+        TypeError,
+    ) as e:
+        # Expected failure modes: connection refused, timeouts, malformed JSON,
+        # or a malformed enrichment item from the model. Degrade to raw CVEs.
         log.warning("AI CVE parsing failed (%s) — using raw CVEs", e)
         for cve in cves:
             cve.setdefault("suggested_action", "Review and patch affected software.")
@@ -304,6 +359,7 @@ def _parse_cves_with_ai(cves: list) -> list:
 # --------------------------------------------------------------------------- #
 #  Relevance filtering
 # --------------------------------------------------------------------------- #
+
 
 def _filter_relevant(cves: list) -> list:
     """Keep CVEs relevant to TraceTree's detection surface."""
@@ -326,6 +382,7 @@ def _filter_relevant(cves: list) -> list:
 #  Public sync entry point
 # --------------------------------------------------------------------------- #
 
+
 def sync_cves(
     nvd_api_key: Optional[str] = None,
     use_ai: bool = True,
@@ -335,6 +392,7 @@ def sync_cves(
     Full sync: fetch → deduplicate → filter → AI-parse → merge into audit trail.
     Returns the updated audit trail dict.
     """
+
     def emit(msg: str) -> None:
         if on_progress:
             on_progress(msg)
@@ -381,13 +439,16 @@ def sync_cves(
     save_audit_trail(trail)
     _update_sync_timestamp()
 
-    emit(f"Audit trail updated: {len(new_cves)} new CVEs added ({trail['total_count']} total)")
+    emit(
+        f"Audit trail updated: {len(new_cves)} new CVEs added ({trail['total_count']} total)"
+    )
     return trail
 
 
 # --------------------------------------------------------------------------- #
 #  CVE matching (called during analyze / scan / watch)
 # --------------------------------------------------------------------------- #
+
 
 def match_cves_for_target(
     target: str,
@@ -406,13 +467,7 @@ def match_cves_for_target(
     if not cves:
         return []
 
-    pkg_name = (
-        target.lower()
-        .split("==")[0]
-        .split("@")[0]
-        .split("[")[0]
-        .strip()
-    )
+    pkg_name = target.lower().split("==")[0].split("@")[0].split("[")[0].strip()
 
     matches = []
     for cve in cves:
@@ -422,9 +477,8 @@ def match_cves_for_target(
         affected = [p.lower() for p in cve.get("affected_products", [])]
         has_name_match = pkg_name in affected or any(pkg_name in p for p in affected)
         has_surface_match = (
-            (target_type == "pip" and any(p in TRACETREE_SURFACE for p in affected))
-            or (target_type == "npm" and any("node" in p or "npm" in p for p in affected))
-        )
+            target_type == "pip" and any(p in TRACETREE_SURFACE for p in affected)
+        ) or (target_type == "npm" and any("node" in p or "npm" in p for p in affected))
 
         # Require a package-specific relevance signal before including this CVE.
         # Without this gate, all 1,644 CISA KEV entries score > 0 on every scan
@@ -469,7 +523,10 @@ def match_cves_for_target(
 #  Background auto-sync (non-blocking)
 # --------------------------------------------------------------------------- #
 
-def auto_sync_background(nvd_api_key: Optional[str] = None) -> Optional[threading.Thread]:
+
+def auto_sync_background(
+    nvd_api_key: Optional[str] = None,
+) -> Optional[threading.Thread]:
     """
     Start a background daemon sync thread if 24h have elapsed.
     Returns the thread (already started) or None if sync not needed.
@@ -481,7 +538,7 @@ def auto_sync_background(nvd_api_key: Optional[str] = None) -> Optional[threadin
         try:
             sync_cves(nvd_api_key=nvd_api_key, use_ai=True)
         except Exception as e:
-            log.warning("Background CVE sync failed: %s", e)
+            log.warning("Background CVE sync failed: %s", e, exc_info=True)
 
     t = threading.Thread(target=_run, daemon=True, name="tracetree-cve-sync")
     t.start()

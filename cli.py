@@ -732,17 +732,32 @@ def analyze(
 
                 # 3. Legs 5 & 8: False Positive Jury
                 all_sig_names = [m["name"] for m in sig_matches] if sig_matches else []
+                parser_flags = parsed_data.get("flags", [])
+                suspicious_networks = graph_data.get("stats", {}).get("suspicious_network_count", 0)
+                sensitive_files = graph_data.get("stats", {}).get("sensitive_file_count", 0)
+                concrete_evidence_count = (
+                    len(all_sig_names)
+                    + len(temp_patterns)
+                    + len(yara_matches)
+                    + len(parser_flags)
+                    + suspicious_networks
+                    + sensitive_files
+                )
                 matched_rule = {
-                    "rule_name": all_sig_names[0] if all_sig_names else "ML_Anomaly_Detection",
+                    "rule_name": all_sig_names[0] if all_sig_names else "NO_CONCRETE_DETECTION",
                     "all_signatures": all_sig_names,
                     "temporal_patterns": [p.get("pattern", str(p)) for p in temp_patterns] if temp_patterns else [],
-                    "severity": risk_score / 10.0 if risk_score else 5.0
+                    "concrete_evidence_count": concrete_evidence_count,
+                    # The jury must receive observed event severity, never the
+                    # already-derived risk score that it is meant to review.
+                    "severity": graph_data.get("stats", {}).get("max_severity", 0.0)
                 }
                 package_metadata = {
-                    "name": current_target,
+                    "target_name": Path(current_target).name,
                     "type": sub_type,
                     "total_severity": parsed_data.get("stats", {}).get("total_severity", 0.0),
-                    "file_count": parsed_data.get("stats", {}).get("file_count", 0)
+                    "file_count": parsed_data.get("stats", {}).get("file_count", 0),
+                    "concrete_evidence_count": concrete_evidence_count,
                 }
                 triage_results = orchestrator.triage_false_positive(matched_rule, package_metadata)
 
@@ -2557,6 +2572,181 @@ def _cve_sync_cmd(
         border_style="green",
         expand=False,
     ))
+
+
+@app.command(name="audit")
+def privacy_audit(
+    app_target: str = typer.Argument(
+        "com.ahmad.macface",
+        help="Path to .app bundle, binary, or bundle identifier (e.g. /Applications/Target.app or com.target.app)",
+    ),
+    goal: str = typer.Option(
+        "Locate settings, audit privacy toggles, and test local generation",
+        "--goal", "-g",
+        help="High-level exploration mission for the AI agent",
+    ),
+    max_steps: int = typer.Option(
+        15,
+        "--max-steps",
+        help="Maximum total UI actions to explore",
+    ),
+    cdp_port: Optional[int] = typer.Option(
+        None,
+        "--cdp-port",
+        help="Port for Electron Chrome DevTools Protocol (e.g. 9222)",
+    ),
+    output: str = typer.Option(
+        "report",
+        "--output", "-o",
+        help="Output format: 'report' (Rich console) or 'json'",
+    ),
+    mock: bool = typer.Option(
+        False,
+        "--mock",
+        help="Run in simulated test mode",
+    ),
+    peek: bool = typer.Option(
+        False,
+        "--peek",
+        help="Display the raw AI response from the last audit session",
+    ),
+):
+    """
+    Autonomously audit a macOS application to verify zero-telemetry / offline claims.
+    Uses Accessibility/CDP exploration, speculative batch actions, and network correlation.
+    """
+    from monitor.privacy_auditor import (
+        MacOSAccessibilityScraper,
+        ElectronCDPClient,
+        NetworkCorrelator,
+        BatchPlanner,
+        SpeculativeExecutor,
+        ReceiptBuilder,
+        LiveSocketAuditor,
+        UIElement,
+    )
+    import json as json_lib
+
+    if peek:
+        last_log = BatchPlanner.get_last_debug_response()
+        if last_log:
+            console.print(Panel(
+                last_log,
+                title="[bold cyan]🔍 TraceTree Last AI Interaction Log[/]",
+                border_style="cyan",
+                expand=False,
+            ))
+        else:
+            console.print("[yellow]No AI interaction logs found at .tracetree/last_llm_response.txt yet.[/]")
+        return
+
+    correlator = NetworkCorrelator()
+    resolved_bundle = None
+    target_pid = None
+
+    if cdp_port:
+        cdp_client = ElectronCDPClient(port=cdp_port)
+        if mock:
+            cdp_client.set_mock_elements([
+                UIElement("btn_settings", "button", "Settings"),
+                UIElement("btn_privacy", "button", "Privacy & Security"),
+            ])
+        ui_provider = cdp_client.get_ui_inventory
+        action_dispatcher = lambda elem_id, action, text: cdp_client.click_element_by_id(elem_id)
+        resolved_bundle = app_target
+    else:
+        ax_scraper = MacOSAccessibilityScraper(target_bundle_id=app_target)
+        if mock:
+            ax_scraper.set_mock_elements([
+                UIElement("ax_1", "AXButton", "Preferences"),
+                UIElement("ax_2", "AXButton", "Offline Mode"),
+            ])
+        else:
+            # Resolve app name, PID, or bundle ID
+            ax_scraper.find_target_pid()
+            resolved_bundle = ax_scraper.target_bundle_id
+            target_pid = ax_scraper.target_pid
+
+        ui_provider = ax_scraper.get_ui_inventory
+        action_dispatcher = lambda elem_id, action, text: ax_scraper.click_element(elem_id)
+
+    target_display = f"{app_target} ({resolved_bundle})" if resolved_bundle and resolved_bundle != app_target else app_target
+
+    console.print(Panel(
+        f"[bold cyan]🔍 TraceTree Autonomous Privacy & Offline Verifier[/]\n"
+        f"Target: [bold]{target_display}[/]\n"
+        f"Mission: [dim]{goal}[/]",
+        border_style="cyan",
+        expand=False,
+    ))
+
+    # Guard against inaccessible or unmounted applications
+    if not mock and not cdp_port and not target_pid:
+        error_msg = (
+            ax_scraper.last_error
+            or f"Target application '{app_target}' was not found running and could not be launched."
+        )
+        console.print(Panel(
+            f"[bold red]✖ Target Application Not Accessible[/]\n\n"
+            f"{error_msg}\n\n"
+            f"[dim]If this application is stored on an external SSD or flash drive, ensure the drive is plugged in and mounted.[/dim]",
+            title="[bold red]Inaccessible Target[/]",
+            border_style="red",
+            expand=False,
+        ))
+
+        from monitor.privacy_auditor.speculative_executor import ExecutionSummary
+        summary = ExecutionSummary(
+            total_steps_executed=0,
+            stopped_reason="target_process_inaccessible",
+        )
+        receipt = ReceiptBuilder.build_receipt(
+            target_app=app_target,
+            bundle_id=resolved_bundle or (app_target if "." in app_target and not app_target.endswith(".app") else None),
+            summary=summary,
+            correlator=correlator,
+            inconclusive_reason=error_msg,
+        )
+        if output.lower() == "json":
+            console.print(json_lib.dumps(receipt.to_dict(), indent=2))
+        else:
+            ReceiptBuilder.render_console_report(receipt, console)
+        return
+
+    socket_auditor = LiveSocketAuditor(correlator=correlator, target_pid=target_pid) if not mock else None
+    planner = BatchPlanner()
+    executor = SpeculativeExecutor(
+        ui_provider=ui_provider,
+        action_dispatcher=action_dispatcher,
+        planner=planner,
+        network_correlator=correlator,
+        debounce_seconds=0.01 if mock else 0.3,
+        socket_auditor=socket_auditor,
+    )
+
+    from monitor.privacy_auditor.entitlements import EntitlementsAuditor
+    ent_violations = EntitlementsAuditor.audit_app_entitlements(app_target)
+    if not ent_violations and resolved_bundle:
+        ent_violations = EntitlementsAuditor.audit_app_entitlements(resolved_bundle)
+
+    summary = executor.run_exploration(goal=goal, max_total_steps=max_steps)
+    receipt = ReceiptBuilder.build_receipt(
+        target_app=app_target,
+        bundle_id=resolved_bundle or (app_target if "." in app_target and not app_target.endswith(".app") else None),
+        summary=summary,
+        correlator=correlator,
+        entitlement_violations=ent_violations,
+    )
+
+    if output.lower() == "json":
+        console.print(json_lib.dumps(receipt.to_dict(), indent=2))
+    else:
+        ReceiptBuilder.render_console_report(receipt, console)
+
+
+def audit_cli():
+    """Standalone CLI entrypoint for cascade-audit."""
+    typer.run(privacy_audit)
 
 
 if __name__ == "__main__":

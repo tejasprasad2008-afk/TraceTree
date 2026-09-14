@@ -21,11 +21,11 @@ from typing import List, Dict, Any, Optional
 log = logging.getLogger(__name__)
 
 # Exclusions to speed up scans and avoid false positives
-SCAN_EXCLUDE_EXTENSIONS = {'.md', '.txt', '.svg', '.png', '.jpg', '.log'}
+SCAN_EXCLUDE_EXTENSIONS = {".md", ".txt", ".svg", ".png", ".jpg", ".log"}
 # .log excluded because strace logs are diagnostic artifacts — YARA scanning them
 # causes false positives (e.g. ObfuscatedEval matching exec(compile() from pip's own
 # Python runtime appearing as captured argument strings in the trace).
-SCAN_EXCLUDE_DIRS = {'docs', 'public', 'assets', 'README'}
+SCAN_EXCLUDE_DIRS = {"docs", "public", "assets", "README"}
 
 # --------------------------------------------------------------------------- #
 #  Embedded YARA rules (no external yara binary required)
@@ -203,12 +203,17 @@ def scan_with_yara(
     # Try real YARA first
     try:
         import yara
+
         rules = _compile_yara_rules(yara)
         if rules is None:
             return _fallback_regex_scan(log_path, package_dir)
     except ImportError:
         log.info("yara-python not installed — using fallback regex scanner")
         return _fallback_regex_scan(log_path, package_dir)
+    except RuntimeError:
+        # MCP YARA rule syntax errors are defects (see _compile_yara_rules) —
+        # propagate loudly instead of silently degrading to the regex scanner.
+        raise
     except Exception as e:
         log.warning("YARA compilation failed (%s) — falling back", e)
         return _fallback_regex_scan(log_path, package_dir)
@@ -224,23 +229,29 @@ def scan_with_yara(
                     for string_match in m.strings
                     for instance in string_match.instances
                 ]
-                results.append({
-                    "rule_name": m.rule,
-                    "severity": m.meta.get("severity", "unknown"),
-                    "description": m.meta.get("description", ""),
-                    "file_path": str(fpath),
-                    "matched_strings": [
-                        inst.matched_data.decode('utf-8', errors='replace')
-                        for inst in instances
-                    ],
-                    # Parallel field preserving byte offsets for static analysis.
-                    # matched_strings kept as plain strings for backward compat.
-                    "matched_offsets": [
-                        {"text": inst.matched_data.decode('utf-8', errors='replace'),
-                         "offset": inst.offset}
-                        for inst in instances
-                    ],
-                })
+                results.append(
+                    {
+                        "rule_name": m.rule,
+                        "severity": m.meta.get("severity", "unknown"),
+                        "description": m.meta.get("description", ""),
+                        "file_path": str(fpath),
+                        "matched_strings": [
+                            inst.matched_data.decode("utf-8", errors="replace")
+                            for inst in instances
+                        ],
+                        # Parallel field preserving byte offsets for static analysis.
+                        # matched_strings kept as plain strings for backward compat.
+                        "matched_offsets": [
+                            {
+                                "text": inst.matched_data.decode(
+                                    "utf-8", errors="replace"
+                                ),
+                                "offset": inst.offset,
+                            }
+                            for inst in instances
+                        ],
+                    }
+                )
         except Exception as e:
             log.debug("YARA scan failed for %s: %s", fpath, e)
 
@@ -256,8 +267,10 @@ def _compile_yara_rules(yara):
     """Compile embedded and external rules using yara-python."""
     try:
         # Load external MCP RCE signatures if they exist
-        mcp_yara_path = Path(__file__).parent.parent / "data" / "mcp_rce_signatures.yara"
-        
+        mcp_yara_path = (
+            Path(__file__).parent.parent / "data" / "mcp_rce_signatures.yara"
+        )
+
         if mcp_yara_path.exists():
             try:
                 with open(mcp_yara_path, "r", encoding="utf-8") as f:
@@ -268,7 +281,8 @@ def _compile_yara_rules(yara):
                 # Issue 5 fix: a syntax error in a security rule is a defect, not a recoverable
                 # event. Raise loudly so operators know MCP rules are NOT active.
                 log.error(
-                    "MCP YARA rules have a syntax error and will NOT be loaded: %s", syn_err
+                    "MCP YARA rules have a syntax error and will NOT be loaded: %s",
+                    syn_err,
                 )
                 raise RuntimeError(
                     f"MCP YARA rule syntax error in {mcp_yara_path}: {syn_err}"
@@ -279,7 +293,7 @@ def _compile_yara_rules(yara):
                     "Could not read MCP YARA file (IO error), falling back to embedded rules: %s",
                     read_err,
                 )
-        
+
         return yara.compile(source=_YARA_RULES_SRC)
     except RuntimeError:
         raise
@@ -288,7 +302,12 @@ def _compile_yara_rules(yara):
         # Try compiling only the embedded source if combined failed
         try:
             return yara.compile(source=_YARA_RULES_SRC)
-        except Exception:
+        except Exception as emb_err:
+            log.error(
+                "Embedded YARA rules also failed to compile (%s) — "
+                "all YARA detection disabled, regex fallback active",
+                emb_err,
+            )
             return None
 
 
@@ -399,14 +418,16 @@ def _fallback_regex_scan(
     for fpath in files_to_scan:
         try:
             if fpath.stat().st_size > max_file_size:
-                log.debug("Skipping large file (%d bytes): %s", fpath.stat().st_size, fpath)
+                log.debug(
+                    "Skipping large file (%d bytes): %s", fpath.stat().st_size, fpath
+                )
                 continue
         except OSError:
             continue
 
         file_matches: Dict[str, List[str]] = {}  # rule_name -> [matched_strings]
         try:
-            with open(fpath, 'r', errors='replace') as f:
+            with open(fpath, "r", errors="replace") as f:
                 for line_num, line in enumerate(f, 1):
                     if line_num > max_lines:
                         log.debug("Truncated file at %d lines: %s", line_num, fpath)
@@ -419,27 +440,33 @@ def _fallback_regex_scan(
                                 # Issue 3 fix: len() guard removed — the regex already enforces
                                 # {1000,} so it is always True and adds O(N) overhead for nothing.
                                 valid_matches = [
-                                    m for m in matches
-                                    if _calculate_entropy(m) >= 5.0
+                                    m for m in matches if _calculate_entropy(m) >= 5.0
                                 ]
                                 if valid_matches:
-                                    file_matches.setdefault(rule, []).extend(valid_matches)
+                                    file_matches.setdefault(rule, []).extend(
+                                        valid_matches
+                                    )
                             else:
                                 file_matches.setdefault(rule, []).extend(matches)
-        except Exception:
+        except OSError as read_err:
+            log.debug("Could not read %s during regex scan: %s", fpath, read_err)
             continue
 
         if file_matches:
             for rule_name, matched in file_matches.items():
-                pattern_info = next(p for p in _FALLBACK_PATTERNS if p["rule_name"] == rule_name)
-                results.append({
-                    "rule_name": rule_name,
-                    "severity": pattern_info["severity"],
-                    "description": pattern_info["description"],
-                    "file_path": str(fpath),
-                    "matched_strings": list(set(matched))[:5],  # cap at 5 unique
-                    "matched_offsets": [],  # regex fallback has no byte offsets
-                })
+                pattern_info = next(
+                    p for p in _FALLBACK_PATTERNS if p["rule_name"] == rule_name
+                )
+                results.append(
+                    {
+                        "rule_name": rule_name,
+                        "severity": pattern_info["severity"],
+                        "description": pattern_info["description"],
+                        "file_path": str(fpath),
+                        "matched_strings": list(set(matched))[:5],  # cap at 5 unique
+                        "matched_offsets": [],  # regex fallback has no byte offsets
+                    }
+                )
 
     return results
 
@@ -465,14 +492,14 @@ def _collect_files(
         for root, dirs, filenames in os.walk(package_dir):
             # Prune excluded directories in-place
             dirs[:] = [d for d in dirs if d not in SCAN_EXCLUDE_DIRS]
-            
+
             for fname in filenames:
                 fpath = Path(root) / fname
-                
+
                 # Check extension exclusion
                 if fpath.suffix.lower() in SCAN_EXCLUDE_EXTENSIONS:
                     continue
-                
+
                 # Check parent path components to make sure they are not in SCAN_EXCLUDE_DIRS
                 if any(part in SCAN_EXCLUDE_DIRS for part in fpath.parts):
                     continue

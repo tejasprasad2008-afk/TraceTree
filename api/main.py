@@ -198,7 +198,7 @@ def _ensure_ollama_model(base_url: str, model: str) -> Dict[str, bool]:
     return {"model_pulled": model_pulled, "model_warmed": True}
 
 
-@app.post("/api/setup/llm")
+@app.post("/api/setup/llm", responses={400: {"description": "Bad Request"}})
 async def configure_llm(request: LLMSetupRequest, api_key: str = Depends(verify_api_key)):
     """Persist a local Workbench LLM choice; the dashboard never returns the secret."""
     provider = request.provider.strip().lower()
@@ -289,7 +289,7 @@ def run_real_analysis(analysis_id: str, package_name: str, target_type: str, env
     except Exception as e:
         mock_db[analysis_id].update({"status": "failed", "error": str(e)})
 
-@app.post("/analyze", response_model=AnalysisResult)
+@app.post("/analyze", response_model=AnalysisResult, responses={400: {"description": "Bad Request"}})
 async def submit_analysis(
     request: AnalysisRequest,
     background_tasks: BackgroundTasks,
@@ -316,13 +316,13 @@ async def submit_analysis(
 
     return mock_db[analysis_id]
 
-@app.get("/results/{analysis_id}", response_model=AnalysisResult)
+@app.get("/results/{analysis_id}", response_model=AnalysisResult, responses={404: {"description": "Not Found"}})
 async def get_results(analysis_id: str, api_key: str = Depends(verify_api_key)):
     if analysis_id not in mock_db:
         raise HTTPException(status_code=404, detail="Analysis ID not found")
     return mock_db[analysis_id]
 
-@app.get("/graph/{analysis_id}", response_model=GraphVisualizationResponse)
+@app.get("/graph/{analysis_id}", response_model=GraphVisualizationResponse, responses={404: {"description": "Not Found"}})
 async def get_graph(analysis_id: str, api_key: str = Depends(verify_api_key)):
     if analysis_id not in mock_db:
         raise HTTPException(status_code=404, detail="Analysis ID not found")
@@ -360,7 +360,7 @@ _ALLOWED_SUBCOMMANDS = frozenset([
     "install-hook", "uninstall-hook", "train",
 ])
 
-@app.post("/api/execute")
+@app.post("/api/execute", responses={400: {"description": "Bad Request"}})
 async def execute_command(request: CommandRequest, api_key: str = Depends(verify_api_key)):
     raw = request.command.strip()
 
@@ -621,7 +621,7 @@ class DisassemblyRequest(BaseModel):
     max_insns: int = 32
 
 
-@app.post("/api/analyze/disassembly")
+@app.post("/api/analyze/disassembly", responses={400: {"description": "Bad Request"}, 404: {"description": "Not Found"}, 422: {"description": "Unprocessable Entity"}, 503: {"description": "Service Unavailable"}})
 async def analyze_disassembly(req: DisassemblyRequest, api_key: str = Depends(verify_api_key)):
     """Run radare2 headless against a quarantined binary at a specific offset.
 
@@ -718,7 +718,7 @@ async def get_signatures(api_key: str = Depends(verify_api_key)):
 class SignaturesUpdate(BaseModel):
     rules: str
 
-@app.post("/api/signatures")
+@app.post("/api/signatures", responses={400: {"description": "Bad Request"}, 500: {"description": "Internal Server Error"}})
 async def update_signatures(request: SignaturesUpdate, api_key: str = Depends(verify_api_key)):
     """Validate and update YARA signature rules."""
     try:
@@ -757,7 +757,7 @@ async def docker_status(api_key: str = Depends(verify_api_key)):
 class FileScanRequest(BaseModel):
     path: str
 
-@app.post("/api/scan/file")
+@app.post("/api/scan/file", responses={400: {"description": "Bad Request"}})
 async def scan_file(
     request: FileScanRequest,
     background_tasks: BackgroundTasks,
@@ -839,7 +839,7 @@ async def scan_file(
     return {"scan_id": scan_id, "static_verdict": mock_db[scan_id]["static_verdict"], "sha256": sha256}
 
 
-@app.get("/api/scans/{scan_id}")
+@app.get("/api/scans/{scan_id}", responses={404: {"description": "Not Found"}})
 async def get_scan(scan_id: str, api_key: str = Depends(verify_api_key)):
     if scan_id not in mock_db:
         raise HTTPException(status_code=404, detail="Scan not found")
