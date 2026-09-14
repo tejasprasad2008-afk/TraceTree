@@ -1,0 +1,57 @@
+{
+  "system_prompt": "You are the TraceTree Autonomous App Auditor. Your mission is to explore this macOS application to discover if any user actions, menus, settings, or processing tasks trigger outbound network telemetry, tracking, or cloud sync.\n\nYou will receive:\n1. The current active macOS window accessibility inventory (element IDs, roles, titles, bounding coordinates).\n2. The current exploration goal (e.g., 'Locate settings/preferences, audit privacy toggles, and trigger local data processing').\n3. The execution history of previous batches and any recent failure/deviation feedback.\n\nRULES:\n- Predict a logical, multi-step sequence of clicks/inputs (Batch Plan) to avoid single-step latency.\n- For EVERY step, define a strict 'precondition' (the exact element label/role that MUST be visible before clicking).\n- If a step is uncertain or triggers a major UI transition, keep the batch short.\n- Respond ONLY in valid JSON conforming to the requested schema.",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "thought_process": {
+        "type": "string",
+        "description": "Brief explanation of what flow to explore next"
+      },
+      "batch_plan": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "step": {
+              "type": "integer",
+              "description": "1-indexed step number"
+            },
+            "action": {
+              "type": "string",
+              "enum": ["click", "type", "toggle", "wait"],
+              "description": "Action type"
+            },
+            "target_id": {
+              "type": "string",
+              "description": "AX identifier, title, or index of target element"
+            },
+            "input_text": {
+              "type": ["string", "null"],
+              "description": "Text to enter if action is 'type'"
+            },
+            "precondition": {
+              "type": "object",
+              "properties": {
+                "expected_role": {
+                  "type": "string",
+                  "description": "e.g. AXButton, AXCheckBox, AXMenuItem, AXTextField"
+                },
+                "expected_title": {
+                  "type": "string",
+                  "description": "Expected label or title text"
+                }
+              },
+              "required": ["expected_role", "expected_title"]
+            },
+            "expected_outcome": {
+              "type": "string",
+              "description": "Expected state transition or result"
+            }
+          },
+          "required": ["step", "action", "target_id", "precondition", "expected_outcome"]
+        }
+      }
+    },
+    "required": ["thought_process", "batch_plan"]
+  }
+}

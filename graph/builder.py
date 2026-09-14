@@ -104,14 +104,18 @@ def build_cascade_graph(
                 node_id,
                 label=target,
                 type="file",
-                severity=8.0 if sensitive else 0.5,
+                # Ordinary reads are observability context, not threat evidence.
+                # Giving every file open a 0.5 score made a routine installer that
+                # reads a few dozen files look "high severity" even when the
+                # parser had raised no suspicious flags.
+                severity=8.0 if sensitive else 0.0,
                 signature_tags=tags,
             )
             G.add_edge(
                 pid,
                 node_id,
                 label="openat",
-                severity=8.0 if sensitive else 0.5,
+                severity=8.0 if sensitive else 0.0,
                 signature_tags=tags,
             )
 

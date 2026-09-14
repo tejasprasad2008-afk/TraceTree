@@ -21,6 +21,7 @@ traceenv/
 ENV/
 env/
 .pytest_cache/
+.hypothesis/
 .eggs/
 *.egg-info/
 .ruff_cache/
@@ -37,8 +38,10 @@ dist/
 sdist/
 var/
 spec/
-samples/mirai.zip
-samples/sample.zip
+# --- Samples and Malicious Artifacts ---
+samples/*.zip
+dummy_*.skops
+malicious.skops
 
 # --- Node / TypeScript (Orchestrator & Frontend) ---
 node_modules/
@@ -59,6 +62,7 @@ yarn-error.log*
 next-env.d.ts
 test-results/
 playwright-results/
+.vercel/
 
 # --- macOS App / Build Artifacts ---
 TraceTree.app/
@@ -66,14 +70,17 @@ TraceTree.spec
 macapp/.build/
 macapp/.swiftpm/
 
-# --- Runtime Logs ---
+# --- Runtime Logs & Test Directories ---
 logs/
+.tracetree/
+.schemathesis/
+tracetree-test/
 
-# --- TraceTree runtime state (session history, quarantine) ---
-# quarantine/ holds live malware binaries extracted from sandboxed samples.
-# MUST NOT be committed. history/ holds session receipts/analyst reports.
-.tracetree/quarantine/
-.tracetree/history/
+# --- Local Agent / Knowledge Graph Caches ---
+graphify-out/
+docs/graphify-out/
+.agents/
+.claude/
 
 # --- Third-party repos cloned into project root ---
 repocheckai/
@@ -103,3 +110,4 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 vulnerable-mcp-servers-lab/
+

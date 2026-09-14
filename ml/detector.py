@@ -285,39 +285,55 @@ def _severity_adjusted_confidence(
     sensitive_file_count: int,
     suspicious_network_count: int,
     temporal_pattern_count: int = 0,
+    concrete_evidence_count: int = 0,
 ) -> Tuple[bool, float, List[str]]:
     """
     Adjust the ML model's verdict using syscall severity, signature, and temporal evidence.
 
     Scoring Rules:
       1. Base score is the initial ML confidence/probability (0-100).
-      2. If total_severity >= 30.0 (Critical): Override to malicious (is_malicious = True),
-         and sets the risk score to min(99.0, max(confidence, 90.0) + 5.0).
-      3. If total_severity >= 15.0 (High): Boosts risk score by +30.0. Flips verdict to
+      2. Severity escalation requires at least one concrete threat indicator
+         (parser flag, signature, suspicious destination, sensitive file, or
+         temporal pattern). Aggregate activity alone is not malicious evidence.
+      3. If total_severity >= 30.0 (Critical): Override to malicious and add 25
+         points to the model's risk score (capped at 99.0).
+      4. If total_severity >= 15.0 (High): Boosts risk score by +30.0. Flips verdict to
          malicious if the adjusted score exceeds 60.0.
-      4. If total_severity >= 5.0 (Medium): Boosts risk score by +10.0.
-      5. Each matched temporal pattern adds +15.0 to the risk score. If there are 2 or
+      5. If total_severity >= 5.0 (Medium): Boosts risk score by +10.0.
+      6. Each matched temporal pattern adds +15.0 to the risk score. If there are 2 or
          more temporal patterns, the verdict is overridden to malicious.
-      6. Each sensitive file access adds +5.0 to the risk score.
-      7. Each suspicious network connection adds +5.0 to the risk score.
-      8. The final risk score is capped at 99.9.
+      7. Each sensitive file access adds +5.0 to the risk score.
+      8. Each suspicious network connection adds +5.0 to the risk score.
+      9. The final risk score is capped at 99.9.
 
     Returns:
         (is_malicious_adjusted, risk_score, reasons)
     """
     confidence = ml_confidence
     reasons = []
+    has_concrete_evidence = (
+        concrete_evidence_count > 0
+        or sensitive_file_count > 0
+        or suspicious_network_count > 0
+        or temporal_pattern_count > 0
+    )
+
+    if total_severity >= _SEVERITY_BOOST_THRESHOLDS["medium"] and not has_concrete_evidence:
+        reasons.append(
+            "Aggregate syscall severity was not escalated because no concrete "
+            "threat evidence was observed"
+        )
 
     # Critical severity: boost RF confidence by 25 pts, preserve the RF signal.
     # Previously used max(confidence, 90.0) + 5.0 which hardcoded 95% for every sample
     # with total_severity >= 30 — discarding the trained RF model's actual probability.
-    if total_severity >= _SEVERITY_BOOST_THRESHOLDS["critical"]:
+    if has_concrete_evidence and total_severity >= _SEVERITY_BOOST_THRESHOLDS["critical"]:
         new_conf = min(99.0, confidence + 25.0)
         reasons.append(f"Critical syscall severity boost (+25 risk, total severity {total_severity:.1f} >= 30.0)")
         return True, new_conf, reasons
 
     # High severity boost
-    if total_severity >= _SEVERITY_BOOST_THRESHOLDS["high"]:
+    if has_concrete_evidence and total_severity >= _SEVERITY_BOOST_THRESHOLDS["high"]:
         confidence = min(99.0, confidence + 30.0)
         reasons.append(f"High syscall severity boost (+30.0 risk, total severity {total_severity:.1f} >= 15.0)")
         if confidence > 60.0 and not is_malicious:
@@ -325,7 +341,7 @@ def _severity_adjusted_confidence(
             reasons.append("Verdict flipped to malicious due to high syscall severity and supporting evidence")
 
     # Medium severity boost
-    elif total_severity >= _SEVERITY_BOOST_THRESHOLDS["medium"]:
+    elif has_concrete_evidence and total_severity >= _SEVERITY_BOOST_THRESHOLDS["medium"]:
         confidence = min(99.0, confidence + 10.0)
         reasons.append(f"Medium syscall severity boost (+10.0 risk, total severity {total_severity:.1f} >= 5.0)")
 
@@ -367,9 +383,21 @@ def detect_anomaly(
           - reasons (List[str])
     """
     target_features = map_features(graph_data, parsed_data)
+    stats = graph_data.get("stats", {})
+    parser_flags = parsed_data.get("flags", [])
+    signature_matches = stats.get("signature_match_count", 0)
 
-    # 2.9 MODEL CACHING - check if we have a cached prediction for these features
-    feature_hash = hashlib.sha256(json.dumps(target_features).encode()).hexdigest()
+    # The final verdict also depends on explicit evidence not represented in the
+    # numeric model vector. Include it in the cache key so a flagged trace can
+    # never reuse a clean trace's post-processing result (or vice versa).
+    prediction_input = {
+        "features": target_features,
+        "parser_flags": sorted(map(str, parser_flags)),
+        "signature_match_count": signature_matches,
+    }
+    feature_hash = hashlib.sha256(
+        json.dumps(prediction_input, sort_keys=True).encode()
+    ).hexdigest()
     if feature_hash in _PREDICTION_CACHE:
         return _PREDICTION_CACHE[feature_hash]
 
@@ -411,11 +439,11 @@ def detect_anomaly(
             ml_confidence = max(0.0, 50.0 - (raw_score * 200))
 
     # --- Severity + Temporal adjustment ---
-    stats = graph_data.get("stats", {})
     total_severity = stats.get("total_severity", 0.0)
     sensitive_files = stats.get("sensitive_file_count", 0)
     suspicious_nets = stats.get("suspicious_network_count", 0)
     temporal_patterns = stats.get("temporal_pattern_count", 0)
+    concrete_evidence_count = len(parser_flags) + signature_matches
 
     is_malicious, risk_score, reasons = _severity_adjusted_confidence(
         is_malicious,
@@ -424,6 +452,7 @@ def detect_anomaly(
         sensitive_files,
         suspicious_nets,
         temporal_patterns,
+        concrete_evidence_count,
     )
 
     result = AnomalyVerdict(is_malicious, risk_score, ml_probability, reasons)

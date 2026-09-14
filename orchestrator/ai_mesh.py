@@ -385,14 +385,15 @@ class AIMeshOrchestrator:
         Hard blocks (LLM cannot override):
         1. Severity >= _HARDBLOCK_SEVERITY
         2. Any matched signature in _HARDBLOCK_SIGNATURES
-        3. Package name looks like a hex hash / random sample filename
+
+        A target's path or filename is deliberately not a hard block. Names are
+        untrusted metadata and do not demonstrate malicious behavior.
         """
 
         severity = float(matched_rule.get("severity", 0.0))
         all_sigs: List[str] = list(matched_rule.get("all_signatures", []))
         if matched_rule.get("rule_name"):
             all_sigs.append(matched_rule["rule_name"])
-        pkg_name: str = str(package_metadata.get("name", ""))
 
         # Block 1: high severity
         if severity >= self._HARDBLOCK_SEVERITY:
@@ -425,21 +426,6 @@ class AIMeshOrchestrator:
                         reasoning=reason,
                     )
 
-        # Block 3: package name looks like a hex hash or random sample artifact
-        basename = Path(pkg_name).name
-        if re.fullmatch(r"[0-9a-fA-F]{16,}", basename) or re.fullmatch(r"[0-9a-fA-F]{16,}.*", basename):
-            reason = (
-                f"HARD BLOCK: package name '{basename}' matches hex-hash pattern typical of malware samples. "
-                "LLM override disabled."
-            )
-            log.warning(f"triage_false_positive hard block (hash name): {reason}")
-            return TriageResult(
-                verdict="SUSPICIOUS",
-                confidence=1.0,
-                mitigation_applied=False,
-                reasoning=reason,
-            )
-
         return None
 
     def triage_false_positive(self, matched_rule: Dict[str, Any], package_metadata: Dict[str, Any]) -> "TriageResult":
@@ -452,6 +438,26 @@ class AIMeshOrchestrator:
         hard_block = self._check_hard_blocks(matched_rule, package_metadata)
         if hard_block is not None:
             return hard_block
+
+        # Do not ask a language model to manufacture suspicion from a target
+        # name, a busy trace, or missing allow-list entries. When the pipeline
+        # found no concrete signal, preserve the clean baseline deterministically.
+        all_sigs = list(matched_rule.get("all_signatures", []))
+        temporal_patterns = list(matched_rule.get("temporal_patterns", []))
+        evidence_count = int(matched_rule.get("concrete_evidence_count", 0))
+        rule_name = str(matched_rule.get("rule_name", ""))
+        no_detection = rule_name in ("", "NO_CONCRETE_DETECTION", "ML_Anomaly_Detection")
+        if no_detection and not all_sigs and not temporal_patterns and evidence_count == 0:
+            return TriageResult(
+                verdict="FALSE_POSITIVE",
+                confidence=1.0,
+                mitigation_applied=True,
+                reasoning=(
+                    "No signature, suspicious syscall flag, sensitive-file access, "
+                    "suspicious destination, or temporal threat pattern was observed. "
+                    "Target identity and aggregate activity were not treated as evidence."
+                ),
+            )
 
         # Load local heuristics
         heuristics_data = {}
@@ -467,12 +473,10 @@ class AIMeshOrchestrator:
             "You are a False Positive Juror. Your objective is to check if a security alert is a false positive.\n"
             "You will be given the matched security pattern, package metadata, and standard triage heuristics.\n"
             "CRITICAL SECURITY GUIDELINES:\n"
-            "1. DEFAULT STANCE: The default verdict is 'SUSPICIOUS'. You must ONLY rule 'FALSE_POSITIVE' if there is clear, explicit, positive, and undeniable evidence matching a whitelisted benign exception rule in 'triage_baselines' or if the package is a verified, standard benign dependency/tool performing standard actions.\n"
-            "2. WHITELIST-ONLY EXCEPTION STRATEGY: Do NOT downgrade an alert to 'FALSE_POSITIVE' unless it explicitly fits a whitelisted exception rule in 'triage_baselines'. In the absence of matching exception rules or explicit verification, the verdict MUST remain 'SUSPICIOUS'.\n"
-            "3. NO LACK-OF-EVIDENCE DOWNGRADES: A lack of additional suspicious features (such as no network activity, no sensitive file reads, or a lack of known threat data) is NOT a reason to clear an alert. Lack of evidence confirming a threat does NOT make the alert a false positive.\n"
-            "4. HIGH SEVERITY ALERTS: If the matched pattern has a high severity (severity >= 7.0/10), be extremely conservative. Patterns like 'process_injection' (e.g., modifying memory protections like PROT_EXEC, executing unexpected binaries, mprotect/mmap manipulations, or spawning unexpected shells/subprocesses) represent critical threats and must NEVER be marked 'FALSE_POSITIVE' unless they match a highly specific whitelisted exceptions rule.\n"
-            "5. ANOMALOUS METADATA: Pay close attention to package names. If the package 'name' looks like a random hash (e.g. SHA-256/MD5 hex strings like 'd59a0308d2a3ba15b1f5f71269...zip'), UUID, temporary upload file, or random characters, it is typical of malware samples and sandbox targets. Such files must NEVER be cleared as false positives without positive whitelist matches.\n"
-            "6. REASONING REQUIREMENT: The 'reasoning' field must clearly state which specific whitelisted exception rule was matched. If no exception was matched, state clearly that it remains 'SUSPICIOUS' due to lack of a matching exception.\n\n"
+            "1. EVIDENCE-BASED VERDICTS: Return 'SUSPICIOUS' only when the supplied matched pattern or concrete evidence demonstrates a threat. A target path, filename, extension, hash-like name, package name, activity volume, or a missing allow-list entry is never malicious evidence.\n"
+            "2. FALSE POSITIVES: Return 'FALSE_POSITIVE' when the concrete behavior is consistent with a supplied benign exception or when the alert lacks a concrete matched threat pattern. Do not require a package to be on a whitelist before you can recognize normal behavior.\n"
+            "3. HIGH SEVERITY ALERTS: Treat verified high-severity behaviors such as process injection, unexpected executable memory, privilege escalation, or a reverse shell conservatively.\n"
+            "4. REASONING REQUIREMENT: Cite the concrete behavior that supports suspicion, or explain the benign context. Never infer maliciousness from target identity alone.\n\n"
             "Return a JSON response conforming to this schema:\n"
             "{\n"
             "  \"verdict\": \"FALSE_POSITIVE\" | \"SUSPICIOUS\",\n"
