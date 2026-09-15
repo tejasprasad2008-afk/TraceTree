@@ -309,7 +309,7 @@ def setup_gui_mode() -> bool:
             return False
             
     # 4. Check Node.js and frontend dependencies
-    project_root = Path(__file__).resolve().parent
+    project_root = Path(__file__).resolve().parent.parent
     frontend_dir = project_root / "frontend"
     node_modules = frontend_dir / "node_modules"
     
@@ -361,10 +361,10 @@ def main():
         
     if success:
         console.print("\n[bold green]🎉 TraceTree setup completed successfully![/]\n")
-        if mode == "2":
-            console.print("You can launch the unified dashboard using:")
-            console.print("   [bold cyan]cascade-dashboard[/] (if installed via pip)")
-            console.print("   or [bold cyan]python3 cli.py dashboard[/]\n")
+        console.print("[bold]Key TraceTree Commands:[/] ")
+        console.print("   • [bold cyan]cascade analyze <target>[/]      Behavioral cascade sandbox analysis")
+        console.print("   • [bold cyan]cascade-audit <target>[/]        Autonomous macOS Privacy & Offline Verifier")
+        console.print("   • [bold cyan]cascade-dashboard[/]             Launch workbench web dashboard\n")
     else:
         console.print("\n[bold red]❌ TraceTree setup failed or was partially completed.[/]\n")
         sys.exit(1)

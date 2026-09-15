@@ -1,15 +1,16 @@
 # TraceTree
 
-![TraceTree Banner](header%20banner.png)
-
-![TraceTree Demo](tracetree%20ad.gif)
+<p align="center">
+  <img src="docs/assets/banner.png" alt="TraceTree Banner" width="100%" />
+</p>
 
 **TraceTree** (cascade-analyzer) is an autonomous security organism designed for the agentic era. It moves beyond simple scanning into a robust, hardened, and scalable detection ecosystem. Like its mascot, the spider, TraceTree weaves a comprehensive web of protection around your development workflow using its eight specialized "legs."
 
 ## Table of Contents
 * [Repository Structure](#repository-structure)
-* [Behavior receipt export](#behavior-receipt-export)
+* [Behavior Receipt Export](#behavior-receipt-export)
 * [The 8 Legs of the TraceTree Spider](#the-8-legs-of-the-tracetree-spider)
+* [Autonomous macOS Privacy & Offline Verifier](#autonomous-macos-privacy--offline-verifier)
 * [How It Works](#how-it-works)
 * [What It Detects](#what-it-detects)
   * [Behavioral Signatures](#behavioral-signatures-8-patterns)
@@ -24,37 +25,31 @@
 * [Architecture Overview](#architecture)
 * [Limitations & Blind Spots](#limitations--blind-spots)
 
-## Behavior receipt export
+## Behavior Receipt Export
 
 TraceTree can be used as a review gate before agents or humans trust a package install. See [Behavior receipt export](docs/behavior-receipt-export.md) for a small JSON/SARIF-friendly receipt shape that summarizes target hash, sandbox policy, observed behavior, artifact hashes, verdict, and privacy defaults without exposing raw syscall logs.
 
 
 ## Repository Structure
 
-```
+```text
 TraceTree/
-├── api/                    # API stubs
-├── codebase-analysis-docs/ # Architecture documents and knowledge guides
-├── data/                   # Behavioral signatures, rules, and training datasets
-├── docs/                   # Documentation assets
-├── examples/               # Demo scripts and usage examples
-├── frontend/               # Next.js/React web dashboard
-├── graph/                  # NetworkX directed graph builder
-├── hooks/                  # Git/Shell hooks for background monitoring
-├── logs/                   # Execution trace logs and strace outputs
-├── macapp/                 # Native macOS menu bar app
-├── mascot/                 # Console ASCII spider mascot
-├── mcp/                    # MCP server security testing module
-├── ml/                     # Machine learning classification and anomaly detection
-├── monitor/                # Core syscall parser, YARA matching, and timelines
-├── orchestrator/           # TypeScript multi-agent coordination server
-├── repocheckai/            # Repository analysis engine (TypeScript/Node)
-├── samples/                # Malware and benign files for sandbox tests
-├── sandbox/                # Docker container manager and strace sandbox
-├── test_targets/           # Mock packages/servers for detection testing
-├── tests/                  # Unit, integration, and system tests
-├── watcher/                # File system change listener daemon
-└── worker/                 # Background task execution worker
+├── api/                    # FastAPI REST & WebSocket server
+├── data/                   # Signatures, prompt schemas, and training datasets
+├── docs/                   # Documentation and visual branding assets
+├── frontend/               # Next.js / Tailwind workbench dashboard
+├── graph/                  # NetworkX directed behavioral graph builder
+├── hooks/                  # Git/Shell hooks for proactive installation monitoring
+├── macapp/                 # Native SwiftUI macOS app
+├── mascot/                 # Console ASCII spider mascot engine
+├── mcp/                    # Model Context Protocol security auditing module
+├── ml/                     # Machine learning models, training, and anomaly detection
+├── monitor/                # Syscall parser, YARA matching, timelines & privacy_auditor/
+├── npm_adaptive/           # Dynamic npm execution analysis and harness planner
+├── orchestrator/           # TypeScript/Python AI mesh coordination server
+├── sandbox/                # Docker container isolation & strace execution runner
+├── scripts/                # Utility, setup wizard, training, and simulation scripts
+└── tests/                  # Unit, integration, and security test suites
 ```
 
 ## The 8 Legs of the TraceTree Spider
@@ -67,6 +62,21 @@ TraceTree/
 6.  **Leg 6: MCP Security Protocol (The Agent Shield)** — Specialized protection for Model Context Protocol servers, defending the tools that AI agents use.
 7.  **Leg 7: Security Guardian AI (The Proactive Web)** — A pre-commit "Smart Scanner" using local LLMs (Qwen-Coder) to catch leaks and injections before they hit your history.
 8.  **Leg 8: Temporal & N-gram Analysis (The DNA Scan)** — Identifies threats by the *rhythm* and *sequence* of their actions across time.
+
+---
+
+## Autonomous macOS Privacy & Offline Verifier
+
+TraceTree introduces an **Autonomous Privacy & Offline Verifier** (`cascade-audit` / `cascade audit`) that verifies zero-telemetry and local-execution claims of desktop applications (Ollama, Claude Desktop, WhatsApp, Electron tools, etc.):
+
+- **Autonomous UI Exploration**: Uses macOS Accessibility (AX via `pyobjc`) for native apps or Chrome DevTools Protocol (CDP) for Electron apps. It scans the live UI hierarchy, finds settings panels, toggles privacy switches, and prompts local generation.
+- **Speculative Action Batches & Drift Detection**: Batches multi-step navigation speculative plans. If a screen transition drifts or an element changes unexpectedly, it halts immediately to avoid mis-clicking.
+- **Live Socket Correlation & Leak Detection**: Monitors active kernel sockets (`lsof` / `netstat`) during UI actions to intercept and correlate background telemetry, DNS queries, and unexpected outbound network traffic.
+- **Dumb Monkey Mode Heuristic Fallback**: If an LLM endpoint is unconfigured, unreachable, or rate-limited (HTTP 402/429), TraceTree automatically falls back to an exploratory heuristic loop so your offline and privacy audits never stall.
+- **External AppPorts Storage Guard**: Automatically detects if an application is installed on an unplugged external SSD or USB drive (e.g. via AppPorts `/Volumes/Lexar/AppPorts/`) and emits an informative `INCONCLUSIVE` receipt without crashing macOS or hanging the terminal.
+- **Verifiable Receipts**: Emits cryptographically verifiable audit receipts in Rich Console or machine-readable JSON format (`--output json`).
+
+---
 
 ## How It Works
 
@@ -346,6 +356,32 @@ Interactive training pipeline. Prompts for a MalwareBazaar API key (optional —
 ```bash
 export MALWAREBAZAAR_AUTH_KEY="your-key"
 cascade-train
+```
+
+### `cascade-audit <target>`
+
+Autonomously audit native macOS or Electron applications to verify offline and zero-telemetry claims.
+
+```bash
+# Audit an installed desktop app by name or bundle ID
+cascade-audit Ollama
+cascade-audit "Claude"
+cascade-audit net.whatsapp.WhatsApp
+
+# Custom exploration goal and step limits
+cascade-audit Ollama --goal "Verify offline model inference produces zero telemetry" --max-steps 12
+
+# Inspect raw LLM reasoning from the previous audit run
+cascade-audit Ollama --peek
+
+# Audit an Electron app with active Chrome DevTools Protocol debugging
+cascade-audit Slack --cdp-port 9222
+
+# Emit machine-readable audit receipt JSON
+cascade-audit Ollama --output json
+
+# Test with simulated UI elements (mock mode)
+cascade-audit Ollama --mock
 ```
 
 ## MCP Server Security Analysis
