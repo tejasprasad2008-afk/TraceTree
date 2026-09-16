@@ -466,4 +466,10 @@ Pull requests are welcome. Please keep new features decoupled from existing modu
 
 ## License
 
-MIT
+TraceTree is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
+
+- **Free for Non-Production & Evaluation**: Free to inspect, test, develop, and evaluate.
+- **Commercial & Production Use**: Commercial deployment or production use as a service requires a commercial license from the author.
+- **Automatic Open Source Conversion**: Automatically transitions to the **Apache License, Version 2.0** on September 16, 2029.
+
+See [LICENSE](LICENSE) for full legal terms.
