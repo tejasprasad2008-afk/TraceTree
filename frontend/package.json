@@ -23,6 +23,6 @@
     "tailwindcss": "^3.4.14",
     "autoprefixer": "^10",
     "eslint": "^8",
-    "eslint-config-next": "14.2.15"
+    "eslint-config-next": "16.4.6"
   }
 }
