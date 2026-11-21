@@ -4,6 +4,12 @@
   <img src="docs/assets/banner.png" alt="TraceTree Banner" width="100%" />
 </p>
 
+<p align="center">
+  <a href="https://www.bestpractices.dev/projects/16985">
+    <img src="https://www.bestpractices.dev/projects/16985/baseline" alt="OpenSSF Baseline" />
+  </a>
+</p>
+
 **TraceTree** (cascade-analyzer) is an autonomous security organism designed for the agentic era. It moves beyond simple scanning into a robust, hardened, and scalable detection ecosystem. Like its mascot, the spider, TraceTree weaves a comprehensive web of protection around your development workflow using its eight specialized "legs."
 
 ## Table of Contents
