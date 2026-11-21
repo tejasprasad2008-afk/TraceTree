@@ -1,7 +1,7 @@
 # This image is intentionally separate from TraceTree's legacy sandbox.  It is
 # for adaptive npm import/harness attempts only and must be built from a pinned
 # Node image digest by the deployment pipeline.
-ARG NODE_IMAGE=node:24-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:9234b41aa8939c4a8cf61b369c9ea8a0ef98980b18f670df59c3f4e2f89c0966
 FROM ${NODE_IMAGE}
 
 RUN apt-get update \
