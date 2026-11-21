@@ -17,8 +17,7 @@
       "name": "TraceTree",
       "description": "Local-first runtime behavioral analysis tool and sandbox that maps package execution and MCP tool calls into directed graphs to detect supply-chain attacks. Instead of relying on signatures, it records what a package actually does at runtime (file, network, process and syscall activity) and flags malicious behavior patterns.",
       "webpageUrl": {
-        "url": "https://github.com/tejasprasad2008-afk/TraceTree",
-        "wellKnown": "https://tracetree-sigma.vercel.app/.well-known/funding-manifest-urls"
+        "url": "https://github.com/tejasprasad2008-afk/TraceTree"
       },
       "repositoryUrl": {
         "url": "https://github.com/tejasprasad2008-afk/TraceTree"
