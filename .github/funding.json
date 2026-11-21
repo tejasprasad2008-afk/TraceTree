@@ -1,0 +1,82 @@
+{
+  "$schema": "https://fundingjson.org/schema/v1.0.0.json",
+  "version": "v1.0.0",
+  "entity": {
+    "type": "individual",
+    "role": "maintainer",
+    "name": "Tejas Prasad",
+    "email": "tejasprasad2008@gmail.com",
+    "description": "Independent security researcher and open-source developer building runtime behavioral analysis tools to secure software supply chains. Author of published research on cascading API vulnerabilities and maintainer of TraceTree and Switchboard-MCP.",
+    "webpageUrl": {
+      "url": "https://github.com/tejasprasad2008-afk"
+    }
+  },
+  "projects": [
+    {
+      "guid": "tracetree",
+      "name": "TraceTree",
+      "description": "Local-first runtime behavioral analysis tool and sandbox that maps package execution and MCP tool calls into directed graphs to detect supply-chain attacks. Instead of relying on signatures, it records what a package actually does at runtime (file, network, process and syscall activity) and flags malicious behavior patterns.",
+      "webpageUrl": {
+        "url": "https://tracetree-sigma.vercel.app/",
+        "wellKnown": "https://github.com/tejasprasad2008-afk/TraceTree/blob/main/funding.json"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/tejasprasad2008-afk/TraceTree"
+      },
+      "licenses": [
+        "spdx:MIT"
+      ],
+      "tags": [
+        "security",
+        "supply-chain",
+        "sandbox",
+        "malware-analysis",
+        "cli",
+        "python"
+      ]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "github-sponsors",
+        "type": "payment-provider",
+        "address": "https://github.com/sponsors/tejasprasad2008-afk",
+        "description": "Sponsor TraceTree development on GitHub"
+      },
+      {
+        "guid": "direct-bank",
+        "type": "bank",
+        "description": "Direct bank wire or UPI transfer upon grant approval (contact via email)"
+      }
+    ],
+    "plans": [
+      {
+        "guid": "core-engine-and-detection",
+        "status": "active",
+        "name": "Core Sandbox & Behavioral Detection Engine",
+        "description": "12 months of focused maintenance and development: cross-platform syscall tracing (extending beyond Linux eBPF to macOS and Windows), expanding and tuning the malicious-behavior detection rules to reduce false positives, an independent security review of the sandbox itself, test infrastructure, and comprehensive documentation for open-source maintainers adopting TraceTree.",
+        "amount": 12000,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": [
+          "github-sponsors",
+          "direct-bank"
+        ]
+      },
+      {
+        "guid": "mcp-security-and-ci",
+        "status": "active",
+        "name": "MCP Tool-Call Scanning & CI Integration",
+        "description": "Extends TraceTree to scan MCP servers and tool calls for malicious behavior, adds a shareable rule format so the community can contribute detections, and ships a GitHub Actions integration so maintainers can vet dependencies automatically in CI.",
+        "amount": 8000,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": [
+          "github-sponsors",
+          "direct-bank"
+        ]
+      }
+    ]
+  }
+}
