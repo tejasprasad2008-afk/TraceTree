@@ -34,7 +34,7 @@
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
     "fastify": "^4.28.1",
-    "inquirer": "^10.0.0",
+    "inquirer": "^14.3.0",
     "nanoid": "^5.0.7",
     "zod": "^3.23.8"
   },
