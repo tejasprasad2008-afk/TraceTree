@@ -4,15 +4,6 @@
   <img src="docs/assets/banner.png" alt="TraceTree Banner" width="100%" />
 </p>
 
-<p align="center">
-  <a href="https://scorecard.dev/viewer/?site=github.com/tejasprasad2008-afk/TraceTree">
-    <img src="https://api.scorecard.dev/projects/github.com/tejasprasad2008-afk/TraceTree/badge" alt="OpenSSF Scorecard" />
-  </a>
-  <a href="https://github.com/tejasprasad2008-afk/TraceTree/actions/workflows/codeql.yml">
-    <img src="https://github.com/tejasprasad2008-afk/TraceTree/actions/workflows/codeql.yml/badge.svg" alt="CodeQL SAST" />
-  </a>
-</p>
-
 **TraceTree** (cascade-analyzer) is an autonomous security organism designed for the agentic era. It moves beyond simple scanning into a robust, hardened, and scalable detection ecosystem. Like its mascot, the spider, TraceTree weaves a comprehensive web of protection around your development workflow using its eight specialized "legs."
 
 ## Table of Contents
