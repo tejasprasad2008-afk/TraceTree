@@ -41,7 +41,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/inquirer": "^9.0.7",
-    "@types/node": "^20.14.10",
+    "@types/node": "^20.19.43",
     "eslint": "^9.6.0",
     "prettier": "^3.10.1",
     "tsx": "^4.16.2",
